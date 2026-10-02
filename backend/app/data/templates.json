@@ -1,0 +1,12 @@
+[
+  {
+    "template_id": "TEMPLATE-FDA-DEFICIENCY-RESPONSE",
+    "name": "FDA Deficiency Response - Standard",
+    "sections": [
+      "Acknowledgement of the deficiency as stated by FDA",
+      "Response narrative addressing the specific question/request",
+      "Supporting evidence and cross-referenced documents/datasets",
+      "Commitment, corrective action, and timeline (if applicable)"
+    ]
+  }
+]

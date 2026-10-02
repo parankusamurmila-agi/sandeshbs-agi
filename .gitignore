@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Backend local-dev storage
+backend/.local_store/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# CDK
+infra/cdk.out/
+infra/.venv/
+
+# Editors / OS
+.vscode/
+.DS_Store
+
+# Local debug artifacts
+*.log
+tmp_upload.json

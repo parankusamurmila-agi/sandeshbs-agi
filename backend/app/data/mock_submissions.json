@@ -1,0 +1,65 @@
+[
+  {
+    "doc_id": "SUB-NDA-205930-M5-CSR-NETTER1",
+    "title": "Clinical Study Report - NETTER-1 (Study 177Lu-DOTA0-Tyr3-Octreotate vs. High-Dose Octreotide)",
+    "doc_type": "CSR",
+    "module": "Module 5.3.5.1",
+    "summary": "Primary CSR for the pivotal NETTER-1 trial supporting the NDA for LUTATHERA; includes TLF appendix and SDTM/ADaM dataset manifest."
+  },
+  {
+    "doc_id": "SUB-NDA-205930-M5-TLF-NETTER1",
+    "title": "Tables, Listings and Figures (TLF) Package - NETTER-1",
+    "doc_type": "TLF",
+    "module": "Module 5.3.5.1 Appendix 16.2",
+    "summary": "Full TLF output generated from the locked NETTER-1 analysis datasets, referenced by the CSR."
+  },
+  {
+    "doc_id": "SUB-NDA-205930-M5-ISS",
+    "title": "Integrated Summary of Safety (ISS)",
+    "doc_type": "ISS",
+    "module": "Module 5.3.5.3",
+    "summary": "Pooled safety analysis across all LUTATHERA clinical studies, including AE/SAE narratives and MedDRA-coded adverse event datasets."
+  },
+  {
+    "doc_id": "SUB-NDA-205930-M5-ISE",
+    "title": "Integrated Summary of Efficacy (ISE)",
+    "doc_type": "ISE",
+    "module": "Module 5.3.5.3",
+    "summary": "Pooled efficacy analysis across LUTATHERA clinical studies supporting the primary endpoint claims."
+  },
+  {
+    "doc_id": "SUB-NDA-205930-DS-fdaclinpharmreqbaselab",
+    "title": "fdaclinpharmreqbaselab - Clinical Pharmacology Baseline Lab Dataset",
+    "doc_type": "Dataset",
+    "module": "Module 5.3.5.3 / Clinical Pharmacology",
+    "summary": "Baseline laboratory values (incl. CrCl) and dosing fields for the clinical pharmacology population across NETTER-1, Erasmus, and Netter-1-UK cohorts."
+  },
+  {
+    "doc_id": "SUB-NDA-205930-DS-pktp",
+    "title": "pktp - Pharmacokinetic Time-Point Dataset",
+    "doc_type": "Dataset",
+    "module": "Module 5.3.5.3 / Clinical Pharmacology",
+    "summary": "Per-patient PK sampling time points, dose, and derived exposure values (Cmax, AUC) for the PK sub-study."
+  },
+  {
+    "doc_id": "SUB-NDA-205930-DS-supppc-supppp",
+    "title": "supppc / supppp - Supplemental Qualifier Datasets",
+    "doc_type": "Dataset",
+    "module": "Module 5.3.5.3 / Clinical Pharmacology",
+    "summary": "Supplemental qualifier variables (IDVAR/IDVARAL) linked to the PC and PP domains for the clinical pharmacology datasets."
+  },
+  {
+    "doc_id": "SUB-NDA-205930-DEFINE-CP",
+    "title": "Define.xml - Clinical Pharmacology Datasets",
+    "doc_type": "Define File",
+    "module": "Module 5.3.5.3",
+    "summary": "Metadata definitions (variable names, derivations, controlled terminology) for all clinical pharmacology SDTM/ADaM datasets."
+  },
+  {
+    "doc_id": "SUB-NDA-205930-M2-SUMMARY",
+    "title": "Module 2.7.3 Summary of Clinical Efficacy",
+    "doc_type": "Summary Document",
+    "module": "Module 2.7.3",
+    "summary": "High-level efficacy summary cross-referencing the ISE and individual study CSRs."
+  }
+]

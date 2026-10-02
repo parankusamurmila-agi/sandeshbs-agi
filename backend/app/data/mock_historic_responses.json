@@ -1,0 +1,20 @@
+[
+  {
+    "precedent_id": "HIST-2015-NDA-198765-D04",
+    "prior_deficiency": "The datasets submitted do not include a Unique Subject ID (USUBJID) consistent across all domains, preventing cross-dataset comparison.",
+    "prior_response_summary": "Applicant resubmitted all SDTM domains with a harmonized USUBJID derived from the enrollment system, added a cross-reference table in the define.xml mapping legacy subject identifiers to USUBJID, and confirmed CDISC SDTM v3.2 conformance via Pinnacle 21 validation report.",
+    "outcome": "Deficiency closed on resubmission; no further CRL comments on this point."
+  },
+  {
+    "precedent_id": "HIST-2017-NDA-201122-D11",
+    "prior_deficiency": "Case narratives for serious adverse events were inconsistent with the case report forms and omitted causality assessments.",
+    "prior_response_summary": "Applicant re-wrote all SAE/AEOSI narratives using the standard CIOMS-aligned template (event description, onset/outcome, concomitant medications, investigator and sponsor causality assessment) and cross-checked each narrative line-by-line against the source CRFs, documenting QC sign-off.",
+    "outcome": "FDA accepted the revised narratives without further query."
+  },
+  {
+    "precedent_id": "HIST-2018-NDA-209044-D07",
+    "prior_deficiency": "Submitted datasets used the .sas7bdat proprietary format instead of the required SAS XPORT transport format.",
+    "prior_response_summary": "Applicant regenerated and resubmitted all datasets as non-compressed .xpt (SAS Transport v5), re-ran Pinnacle 21 compliance checks, and provided a transmittal letter confirming file-format and encoding (Western/latin1) conformance.",
+    "outcome": "Resolved; FDA confirmed the resubmitted datasets were reviewable."
+  }
+]
