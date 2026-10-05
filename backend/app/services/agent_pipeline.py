@@ -1,7 +1,8 @@
 """The three-step HA Request & Response agent.
 
 1. extract_requests  - find every distinct HA request/deficiency in the letter.
-2. link_evidence      - pick relevant submission/historic-precedent records for one request.
+2. link_evidence      - pick relevant submission/historic-precedent/registration records for
+                        one request.
 3. draft_response     - draft a grounded response for one request.
 
 Each step is one forced tool-use Bedrock Converse call, kept deliberately
@@ -19,6 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from app.models import CorrespondenceMeta, Draft, ExtractedRequest, HaRequest, LinkedEvidence
 from app.services.bedrock_client import call_tool
+from app.services.prompts import get_prompt
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -38,8 +40,13 @@ def _load_templates() -> List[Dict[str, Any]]:
     return json.loads((DATA_DIR / "templates.json").read_text(encoding="utf-8"))
 
 
+@lru_cache(maxsize=1)
+def _load_registration_records() -> List[Dict[str, Any]]:
+    return json.loads((DATA_DIR / "mock_registration_records.json").read_text(encoding="utf-8"))
+
+
 def _evidence_catalog() -> List[Dict[str, str]]:
-    """Submissions + historic precedent, normalized into one candidate pool."""
+    """Submissions + historic precedent + registration records, normalized into one candidate pool."""
     catalog: List[Dict[str, str]] = []
     for sub in _load_submissions():
         catalog.append(
@@ -60,6 +67,23 @@ def _evidence_catalog() -> List[Dict[str, str]]:
                     f"Prior deficiency: {hist['prior_deficiency']} "
                     f"Prior response: {hist['prior_response_summary']} "
                     f"Outcome: {hist['outcome']}"
+                ),
+            }
+        )
+    for reg in _load_registration_records():
+        correspondence = reg.get("last_ha_correspondence") or {}
+        catalog.append(
+            {
+                "doc_id": reg["registration_id"],
+                "title": f"Registration: {reg['product']} - {reg['application_number']} ({reg['market']})",
+                "doc_type": "Registration Record",
+                "detail": (
+                    f"Application {reg['application_number']} ({reg['application_type']}) with "
+                    f"{reg['health_authority']} in {reg['market']}. Status: {reg['status']}. "
+                    f"Original submission: {reg['original_submission_date']}. "
+                    f"Last HA correspondence: {correspondence.get('type', 'n/a')} on "
+                    f"{correspondence.get('date', 'n/a')} ({correspondence.get('reference', '')}). "
+                    f"Response due date: {reg.get('response_due_date') or 'n/a'}."
                 ),
             }
         )
@@ -148,36 +172,6 @@ DRAFT_SCHEMA = {
     "required": ["text"],
 }
 
-EXTRACT_SYSTEM_PROMPT = """You are a regulatory affairs assistant. You will be given the full text of a \
-health-authority (HA) deficiency/correspondence letter, with every paragraph wrapped in a \
-tag like <p page="N" idx="K">...</p>.
-
-First, extract letter-level metadata (applicant/sponsor name, product name, letter date, \
-issuing authority) from the opening paragraphs; leave a field blank if not stated.
-
-Then identify every distinct request or deficiency the HA is asking the applicant to address. \
-Treat each numbered item (e.g. "1.", "2.") as a separate request. If a numbered item has \
-lettered sub-items (e.g. "a.", "b."), treat EACH lettered sub-item as its own separate \
-request with request_id formatted as "<number><letter>" (e.g. "9a", "9b"), not the parent \
-number alone. Use the exact page/paragraph of the tag the request text came from. Ignore \
-boilerplate (salutation, signature block, legal disclaimers) -- only extract actionable \
-requests/deficiencies. Call the extract_requests tool exactly once with every request found."""
-
-LINK_SYSTEM_PROMPT = """You are a regulatory affairs assistant selecting supporting evidence for a \
-single HA deficiency response. You will be given the deficiency text and a candidate pool of \
-submission documents/datasets and prior precedent responses. Select ONLY the candidates that \
-are plausibly relevant to responding to this specific deficiency (typically 1-4 items). For \
-each selected candidate, give a one-sentence rationale tied to the deficiency text. Do not \
-invent doc_ids that are not in the candidate pool. Call the link_evidence tool exactly once."""
-
-DRAFT_SYSTEM_PROMPT = """You are a regulatory affairs assistant drafting a response to a single HA \
-deficiency. Ground your response ONLY in: the deficiency text, the supplied linked evidence \
-(cite them by doc_id in `citations`), the response template's section structure, any user-provided \
-direction, and the prior precedent responses if supplied. Do not fabricate data, dates, or \
-commitments that are not implied by the inputs. Follow the template's section headings as the \
-structure of `text` (use short section headers inline). Call the draft_response tool exactly once."""
-
-
 def _as_list(value: Any) -> List[Any]:
     """Bedrock tool-use occasionally serializes an array field as a JSON string
     instead of a native array; normalize either shape to a real list."""
@@ -192,7 +186,7 @@ def _as_list(value: Any) -> List[Any]:
 
 def extract_letter(tagged_letter_text: str) -> tuple[CorrespondenceMeta, List[ExtractedRequest]]:
     result = call_tool(
-        system_prompt=EXTRACT_SYSTEM_PROMPT,
+        system_prompt=get_prompt("ha-extract-requests"),
         user_text=tagged_letter_text,
         tool_name="extract_requests",
         tool_description="Record letter metadata and every distinct HA request/deficiency found.",
@@ -219,7 +213,7 @@ def link_evidence(request: HaRequest) -> List[LinkedEvidence]:
         indent=2,
     )
     result = call_tool(
-        system_prompt=LINK_SYSTEM_PROMPT,
+        system_prompt=get_prompt("ha-link-evidence"),
         user_text=user_text,
         tool_name="link_evidence",
         tool_description="Select relevant evidence records for this deficiency.",
@@ -260,7 +254,7 @@ def draft_response(
         indent=2,
     )
     result = call_tool(
-        system_prompt=DRAFT_SYSTEM_PROMPT,
+        system_prompt=get_prompt("ha-draft-response"),
         user_text=user_text,
         tool_name="draft_response",
         tool_description="Draft the response text for this deficiency.",

@@ -1,0 +1,84 @@
+[
+  {
+    "registration_id": "REG-US-NDA-205930",
+    "product": "LUTATHERA (177Lu-DOTA0-Tyr3-Octreotate)",
+    "application_number": "NDA-205930",
+    "application_type": "NDA",
+    "health_authority": "FDA",
+    "market": "United States",
+    "status": "Under Review - Deficiency Letter Issued",
+    "original_submission_date": "2016-04-28",
+    "last_ha_correspondence": {
+      "type": "Deficiency Letter",
+      "date": "2016-11-21",
+      "reference": "CDER Clinical/Statistical/Clinical Pharmacology Comments"
+    },
+    "response_due_date": "2017-01-20",
+    "related_submission_doc_ids": [
+      "SUB-NDA-205930-M5-CSR-NETTER1",
+      "SUB-NDA-205930-M5-TLF-NETTER1",
+      "SUB-NDA-205930-M5-ISS",
+      "SUB-NDA-205930-M5-ISE",
+      "SUB-NDA-205930-DS-fdaclinpharmreqbaselab",
+      "SUB-NDA-205930-DS-pktp",
+      "SUB-NDA-205930-DS-supppc-supppp",
+      "SUB-NDA-205930-DEFINE-CP",
+      "SUB-NDA-205930-M2-SUMMARY"
+    ]
+  },
+  {
+    "registration_id": "REG-EU-EMEA-H-C-3918",
+    "product": "LUTATHERA (177Lu-DOTA0-Tyr3-Octreotate)",
+    "application_number": "EMEA/H/C/003918",
+    "application_type": "MAA",
+    "health_authority": "EMA",
+    "market": "European Union",
+    "status": "Approved",
+    "original_submission_date": "2016-02-15",
+    "last_ha_correspondence": {
+      "type": "Marketing Authorisation Granted",
+      "date": "2017-09-26",
+      "reference": "CHMP Opinion"
+    },
+    "response_due_date": null,
+    "related_submission_doc_ids": [
+      "SUB-NDA-205930-M5-CSR-NETTER1",
+      "SUB-NDA-205930-M5-ISS",
+      "SUB-NDA-205930-M5-ISE"
+    ]
+  },
+  {
+    "registration_id": "REG-US-NDA-198765",
+    "product": "Product tied to HIST-2015-NDA-198765-D04 precedent",
+    "application_number": "NDA-198765",
+    "application_type": "NDA",
+    "health_authority": "FDA",
+    "market": "United States",
+    "status": "Approved",
+    "original_submission_date": "2014-06-10",
+    "last_ha_correspondence": {
+      "type": "Approval Letter",
+      "date": "2015-11-02",
+      "reference": "Resolved after USUBJID resubmission (see HIST-2015-NDA-198765-D04)"
+    },
+    "response_due_date": null,
+    "related_submission_doc_ids": []
+  },
+  {
+    "registration_id": "REG-US-NDA-209044",
+    "product": "Product tied to HIST-2018-NDA-209044-D07 precedent",
+    "application_number": "NDA-209044",
+    "application_type": "NDA",
+    "health_authority": "FDA",
+    "market": "United States",
+    "status": "Approved",
+    "original_submission_date": "2017-03-21",
+    "last_ha_correspondence": {
+      "type": "Approval Letter",
+      "date": "2018-08-14",
+      "reference": "Resolved after .xpt resubmission (see HIST-2018-NDA-209044-D07)"
+    },
+    "response_due_date": null,
+    "related_submission_doc_ids": []
+  }
+]

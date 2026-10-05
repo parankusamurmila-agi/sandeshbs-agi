@@ -12,6 +12,9 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 
+# Backend secrets
+backend/.env
+
 # CDK
 infra/cdk.out/
 infra/.venv/

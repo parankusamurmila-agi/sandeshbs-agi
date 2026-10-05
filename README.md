@@ -13,9 +13,54 @@ trail.
   demo.
 - **Infra**: AWS CDK (Python) — S3 (PDF storage), DynamoDB (correspondence records),
   Lambda, HTTP API.
-- Submission/registration-tracking data and historic precedent responses are **mocked**
-  fixtures under `backend/app/data/` (small enough to pass in full to the model — no
-  vector DB needed at this scale).
+- Submission content, registration/application tracking records, and historic precedent
+  responses are **mocked** fixtures under `backend/app/data/` (small enough to pass in
+  full to the model — no vector DB needed at this scale).
+
+## Project flow
+
+This builds on the existing Health Authority Interactions product, which already
+converts incoming HA correspondence (email, letter) to PDF, imports it, and summarizes
+it. This agent goes one level deeper — from "what does the letter say" to "what is the
+health authority actually asking the applicant to do, and how do we respond."
+
+1. **Intake** — a deficiency letter PDF is uploaded (`POST /api/correspondence`,
+   `UploadPage.tsx` → `routes.upload_correspondence`). Text is pulled out paragraph by
+   paragraph (`pdf_extractor.py`) and the raw PDF is stored.
+2. **Extract structured requests** — rather than a flat summary, the agent identifies
+   every distinct ask/deficiency as its own item: id, section, verbatim text, referenced
+   documents/datasets, and the exact page/paragraph it came from
+   (`agent_pipeline.extract_letter`, the `ExtractedRequest` model). Numbered items with
+   lettered sub-parts (9a, 9b, ...) are split into separate requests, matching how an
+   applicant tracks remediation items individually.
+3. **Link to submission content and registration records** — each request is matched
+   against a candidate pool of submission documents, historic precedent responses, and
+   registration/application tracking records (application number, market, status,
+   response due date), with a one-sentence rationale per match so a reviewer can see
+   *why* something was pulled in (`agent_pipeline.link_evidence`). Backed by mock
+   fixtures under `backend/app/data/` (`mock_submissions.json`,
+   `mock_historic_responses.json`, `mock_registration_records.json`) standing in for the
+   real HA Interactions / RIM data.
+4. **Human-in-the-loop direction** — before drafting, a user can supply direction (e.g.
+   "we will comply by providing X") via `DraftEditor.tsx` / `DraftRequestBody.direction`.
+   This is where the applicant decides *what* they're going to do about an ask, not just
+   what it says.
+5. **Draft the response** — grounded only in the request text, linked evidence, the
+   response template's section structure, and the user's direction; nothing fabricated
+   (`agent_pipeline.draft_response`).
+6. **Edit, approve, audit** — the draft is editable in place and explicitly approved
+   (`PATCH .../draft`), with every drafted/edited/approved action timestamped in an
+   `AuditEntry` (`AuditTrail.tsx`) — closing the loop from "letter received" to "response
+   approved," with full traceability back to the source paragraph for each ask.
+
+**Known gaps vs. the full ask** (flagged, not yet built):
+- Requests aren't classified into a controlled deficiency-type taxonomy yet — `section`
+  is free text copied from the letter's own heading, not a normalized category.
+- Submission content, historic precedent, and registration/application tracking records
+  are all mocked fixtures (`backend/app/data/`), not a live HA Interactions/RIM
+  integration.
+- There's only one response template (`templates.json`) and no way to select among
+  several — `draft_response` always uses `templates[0]`.
 
 ## Prerequisites
 

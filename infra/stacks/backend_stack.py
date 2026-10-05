@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from aws_cdk import (
@@ -49,6 +50,12 @@ class BackendStack(Stack):
                 "DYNAMODB_TABLE": table.table_name,
                 "S3_BUCKET": pdf_bucket.bucket_name,
                 "BEDROCK_MODEL_ID": self.node.try_get_context("bedrock_model_id") or "us.anthropic.claude-sonnet-5",
+                # Read from the deployer's shell env at `cdk deploy` time (not committed
+                # anywhere) so prompts come from Langfuse in AWS once these are set --
+                # same prompts.json fallback applies if they're left blank.
+                "LANGFUSE_PUBLIC_KEY": os.environ.get("LANGFUSE_PUBLIC_KEY", ""),
+                "LANGFUSE_SECRET_KEY": os.environ.get("LANGFUSE_SECRET_KEY", ""),
+                "LANGFUSE_HOST": os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com"),
             },
         )
 

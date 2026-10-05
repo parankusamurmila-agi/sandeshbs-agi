@@ -5,6 +5,11 @@ exactly once per container.
 """
 
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
@@ -21,3 +26,9 @@ S3_BUCKET = os.environ.get("S3_BUCKET", "ha-response-agent-local")
 # When true, store.py keeps data in an in-process dict and skips S3/DynamoDB
 # entirely -- used for local development without AWS resources provisioned.
 LOCAL_STORE = os.environ.get("LOCAL_STORE", "false").lower() == "true"
+
+# Optional: when both keys are set, app.services.prompts fetches prompts from
+# Langfuse instead of its local defaults. See backend/.env.example.
+LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
+LANGFUSE_SECRET_KEY = os.environ.get("LANGFUSE_SECRET_KEY", "")
+LANGFUSE_HOST = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
