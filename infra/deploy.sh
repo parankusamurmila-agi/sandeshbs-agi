@@ -14,6 +14,11 @@ set -euo pipefail
 REGION="${AWS_REGION:-us-east-1}"
 STACK_NAME="HaResponseAgentBackend"
 MODEL_ID="${BEDROCK_MODEL_ID:-us.anthropic.claude-sonnet-5}"
+# Set AGENTCORE_RUNTIME_ARN to delegate link/draft to the deployed AgentCore
+# Runtime; leave blank to run the agents in-process in the Lambda. ALLOWED_ORIGINS
+# is the CORS allow-list (the Amplify origin; "*" for demo).
+AGENTCORE_RUNTIME_ARN="${AGENTCORE_RUNTIME_ARN:-}"
+ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-*}"
 
 cd "$(dirname "$0")"   # the infra/ directory, so ./build and ./template.yaml resolve
 
@@ -60,7 +65,10 @@ aws cloudformation deploy \
   --template-file packaged.yaml \
   --stack-name "$STACK_NAME" \
   --capabilities CAPABILITY_IAM \
-  --parameter-overrides "BedrockModelId=${MODEL_ID}" \
+  --parameter-overrides \
+      "BedrockModelId=${MODEL_ID}" \
+      "AgentCoreRuntimeArn=${AGENTCORE_RUNTIME_ARN}" \
+      "AllowedOrigins=${ALLOWED_ORIGINS}" \
   --region "$REGION"
 
 echo "== Done. Stack outputs: =="

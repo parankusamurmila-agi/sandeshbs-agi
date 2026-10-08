@@ -1,0 +1,25 @@
+# AWS Amplify Hosting build spec (monorepo: the React app lives in frontend/).
+# Amplify's cloud CI runs this -- no local Node needed. Set the environment
+# variable VITE_API_BASE_URL in the Amplify console (App settings ->
+# Environment variables) to the deployed backend API, e.g.
+#   https://<api-id>.execute-api.us-east-1.amazonaws.com/api
+# It is baked into the static build below (Vite inlines VITE_* at build time).
+version: 1
+applications:
+  - appRoot: frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            - npm ci
+        build:
+          commands:
+            - echo "VITE_API_BASE_URL=$VITE_API_BASE_URL" > .env.production
+            - npm run build
+      artifacts:
+        baseDirectory: dist
+        files:
+          - "**/*"
+      cache:
+        paths:
+          - node_modules/**/*

@@ -1,0 +1,11 @@
+# Dependencies for the Bedrock AgentCore Runtime agent (agentcore_agent.py).
+# Just the agentic pipeline's needs plus the AgentCore runtime SDK -- no
+# FastAPI/Mangum/pypdf/WeasyPrint (the entrypoint is not the HTTP backend and
+# never touches PDFs or .docx).
+bedrock-agentcore
+strands-agents>=1.58.0,<2.0.0
+mcp>=1.23.0,<2.0.0
+boto3>=1.43.0
+pydantic>=2.11.0,<3.0.0
+python-dotenv==1.0.1
+langfuse>=2.36.0,<3.0.0

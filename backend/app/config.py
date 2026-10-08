@@ -32,3 +32,14 @@ LOCAL_STORE = os.environ.get("LOCAL_STORE", "false").lower() == "true"
 LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
 LANGFUSE_SECRET_KEY = os.environ.get("LANGFUSE_SECRET_KEY", "")
 LANGFUSE_HOST = os.environ.get("LANGFUSE_HOST", "https://cloud.langfuse.com")
+
+# When set, the API's link/draft steps delegate to the deployed Bedrock
+# AgentCore Runtime (InvokeAgentRuntime) instead of running the Strands agents
+# in-process. Blank for local dev / inside the runtime itself (in-process).
+AGENTCORE_RUNTIME_ARN = os.environ.get("AGENTCORE_RUNTIME_ARN", "")
+
+# Comma-separated CORS allow-list for the browser frontend. Defaults to the
+# local Vite dev server; set to the deployed Amplify origin (or "*") in AWS.
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:5173").split(",") if o.strip()
+]

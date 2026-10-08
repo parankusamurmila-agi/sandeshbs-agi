@@ -11,6 +11,19 @@ Parameters:
   BedrockModelId:
     Type: String
     Default: us.anthropic.claude-sonnet-5
+  AgentCoreRuntimeArn:
+    Type: String
+    Default: ""
+    Description: >
+      ARN of the deployed Bedrock AgentCore Runtime hosting the link/draft
+      agents. When set, the API delegates link/draft to it; blank runs the
+      Strands agents in-process in the Lambda.
+  AllowedOrigins:
+    Type: String
+    Default: "*"
+    Description: >
+      Comma-separated CORS allow-list for the browser frontend (the Amplify
+      origin). Defaults to "*" for demo simplicity -- tighten for production.
   LangfusePublicKey:
     Type: String
     Default: ""
@@ -22,6 +35,9 @@ Parameters:
   LangfuseHost:
     Type: String
     Default: https://cloud.langfuse.com
+
+Conditions:
+  HasAgentCoreRuntime: !Not [!Equals [!Ref AgentCoreRuntimeArn, ""]]
 
 Resources:
   PdfBucket:
@@ -87,6 +103,17 @@ Resources:
                   - bedrock:Converse
                   - bedrock:ConverseStream
                 Resource: "*"
+              # Lets the Lambda (middle layer) delegate link/draft to the
+              # deployed AgentCore Runtime. Scoped to the configured runtime
+              # ARN (and its endpoints) when set; broad otherwise.
+              - Effect: Allow
+                Action:
+                  - bedrock-agentcore:InvokeAgentRuntime
+                Resource: !If
+                  - HasAgentCoreRuntime
+                  - - !Ref AgentCoreRuntimeArn
+                    - !Sub "${AgentCoreRuntimeArn}/*"
+                  - "*"
 
   BackendFunction:
     Type: AWS::Lambda::Function
@@ -105,6 +132,8 @@ Resources:
           DYNAMODB_TABLE: !Ref CorrespondenceTable
           S3_BUCKET: !Ref PdfBucket
           BEDROCK_MODEL_ID: !Ref BedrockModelId
+          AGENTCORE_RUNTIME_ARN: !Ref AgentCoreRuntimeArn
+          ALLOWED_ORIGINS: !Ref AllowedOrigins
           LANGFUSE_PUBLIC_KEY: !Ref LangfusePublicKey
           LANGFUSE_SECRET_KEY: !Ref LangfuseSecretKey
           LANGFUSE_HOST: !Ref LangfuseHost
@@ -123,8 +152,7 @@ Resources:
       Name: ha-response-agent-api
       ProtocolType: HTTP
       CorsConfiguration:
-        AllowOrigins:
-          - http://localhost:5173
+        AllowOrigins: !Split [",", !Ref AllowedOrigins]
         AllowMethods:
           - "*"
         AllowHeaders:

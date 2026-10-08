@@ -16,7 +16,7 @@ from app.models import (
     IngestPathBody,
     Invocation,
 )
-from app.services import agent_pipeline, batch_ingest, doc_converter, store
+from app.services import agent_pipeline, agent_runtime, batch_ingest, doc_converter, store
 from app.services.bedrock_client import UsageInfo, estimate_cost_usd
 
 router = APIRouter()
@@ -132,7 +132,7 @@ async def link_registration(correspondence_id: str, request_id: str) -> HaReques
     correspondence = _get_correspondence_or_404(correspondence_id)
     req = _get_request_or_404(correspondence, request_id)
 
-    req.linked_registration, req.linked_submissions, req.linked_precedents, usage = agent_pipeline.link_request(
+    req.linked_registration, req.linked_submissions, req.linked_precedents, usage = agent_runtime.link_request(
         req.drug, correspondence.meta.source
     )
     if req.status == "extracted":
@@ -167,7 +167,7 @@ async def generate_draft(correspondence_id: str, request_id: str, body: DraftReq
         )
 
     req.direction = body.direction
-    req.draft, usage = agent_pipeline.draft_response(
+    req.draft, usage = agent_runtime.draft_response(
         req,
         req.linked_registration,
         req.linked_submissions,
