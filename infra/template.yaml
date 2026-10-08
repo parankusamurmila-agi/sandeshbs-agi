@@ -11,6 +11,15 @@ Parameters:
   BedrockModelId:
     Type: String
     Default: us.anthropic.claude-sonnet-5
+  PromptSource:
+    Type: String
+    Default: bedrock
+    AllowedValues: ["local", "langfuse", "bedrock"]
+    Description: >
+      Where the app reads system prompts from. "bedrock" uses Amazon Bedrock
+      Prompt Management (seed it with `python -m scripts.seed_bedrock_prompts`);
+      any prompt missing/unreachable there falls back to the bundled
+      app/data/prompts.json. "langfuse" needs the Langfuse keys below.
   AgentCoreRuntimeArn:
     Type: String
     Default: ""
@@ -102,6 +111,11 @@ Resources:
                   - bedrock:InvokeModel
                   - bedrock:Converse
                   - bedrock:ConverseStream
+                  # Read system prompts from Bedrock Prompt Management
+                  # (PromptSource=bedrock): ListPrompts resolves name -> id,
+                  # GetPrompt fetches the template text.
+                  - bedrock:ListPrompts
+                  - bedrock:GetPrompt
                 Resource: "*"
               # Lets the Lambda (middle layer) delegate link/draft to the
               # deployed AgentCore Runtime. Scoped to the configured runtime
@@ -143,6 +157,7 @@ Resources:
           DYNAMODB_TABLE: !Ref CorrespondenceTable
           S3_BUCKET: !Ref PdfBucket
           BEDROCK_MODEL_ID: !Ref BedrockModelId
+          PROMPT_SOURCE: !Ref PromptSource
           AGENTCORE_RUNTIME_ARN: !Ref AgentCoreRuntimeArn
           ALLOWED_ORIGINS: !Ref AllowedOrigins
           LANGFUSE_PUBLIC_KEY: !Ref LangfusePublicKey
