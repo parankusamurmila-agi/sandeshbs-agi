@@ -7,6 +7,8 @@ with zero AWS setup.
 
 from __future__ import annotations
 
+import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -66,6 +68,10 @@ def put_correspondence(correspondence: Correspondence) -> None:
     if LOCAL_STORE:
         _local_correspondences[correspondence.correspondence_id] = item
     else:
+        # DynamoDB's document types reject Python floats (e.g. the invocations'
+        # estimated_cost_usd) -- round-trip through JSON so every float becomes
+        # a Decimal. On read, pydantic coerces Decimal back to float/int.
+        item = json.loads(json.dumps(item), parse_float=Decimal)
         _get_table().put_item(Item=item)
 
 
