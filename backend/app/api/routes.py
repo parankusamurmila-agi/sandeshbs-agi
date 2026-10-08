@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -14,10 +13,8 @@ from app.models import (
     DraftRequestBody,
     HaRequest,
     IngestPathBody,
-    Invocation,
 )
-from app.services import agent_pipeline, agent_runtime, batch_ingest, doc_converter, store
-from app.services.bedrock_client import UsageInfo, estimate_cost_usd
+from app.services import agent_runtime, batch_ingest, ingest, store
 
 router = APIRouter()
 
@@ -36,48 +33,15 @@ def _get_request_or_404(correspondence: Correspondence, request_id: str) -> HaRe
     raise HTTPException(status_code=404, detail="Request not found in this correspondence")
 
 
-def _build_invocation(kind: str, request_id: str | None, usage: UsageInfo) -> Invocation:
-    return Invocation(
-        kind=kind,
-        request_id=request_id,
-        model_id=usage.model_id,
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        cache_read_input_tokens=usage.cache_read_input_tokens,
-        cache_write_input_tokens=usage.cache_write_input_tokens,
-        estimated_cost_usd=estimate_cost_usd(usage),
-    )
-
-
 def _ingest_one_document(filename: str, raw_bytes: bytes) -> Correspondence:
-    """Shared pipeline for one document, used by both the direct multi-file
-    upload and the path-based batch ingestion -- each call produces exactly
-    one Correspondence with exactly one `extract` Invocation."""
-    converted_note = None
-    if doc_converter.is_docx(filename):
-        pdf_bytes = doc_converter.convert_docx_to_pdf(raw_bytes)
-        converted_note = f"Converted '{filename}' from Word (.docx) to PDF."
-        filename = Path(filename).with_suffix(".pdf").name
-    else:
-        pdf_bytes = raw_bytes
-
-    meta, extracted, usage = agent_pipeline.extract_letter(pdf_bytes, filename)
-
-    correspondence = Correspondence(filename=filename, s3_key="", meta=meta)
-    correspondence.s3_key = store.save_pdf(correspondence.correspondence_id, correspondence.filename, pdf_bytes)
-    correspondence.requests = [HaRequest(**item.model_dump()) for item in extracted]
-    correspondence.audit.append(AuditEntry(action="uploaded", actor="user", note=converted_note or f"Uploaded {filename}"))
-    correspondence.audit.append(
-        AuditEntry(
-            action="extracted",
-            actor="agent",
-            note=f"Extracted {len(correspondence.requests)} request(s) from the letter.",
-        )
-    )
-    correspondence.invocations.append(_build_invocation("extract", None, usage))
-
-    store.put_correspondence(correspondence)
-    return correspondence
+    """Create the record as `extracting` and kick off extraction (async in AWS,
+    inline locally), returning the pending record immediately so the HTTP
+    request never blocks on the model."""
+    correspondence = ingest.create_pending_correspondence(filename, raw_bytes)
+    ingest.trigger_extract(correspondence.correspondence_id)
+    # Re-read so the response reflects the post-trigger state: still
+    # "extracting" in AWS (async), already "extracted" locally (inline).
+    return store.get_correspondence(correspondence.correspondence_id) or correspondence
 
 
 @router.post("/correspondence", response_model=List[Correspondence])
@@ -146,7 +110,7 @@ async def link_registration(correspondence_id: str, request_id: str) -> HaReques
         else f"No registration record matched for '{req.drug}'."
     )
     correspondence.audit.append(AuditEntry(action="linked", actor="agent", note=note, request_id=req.request_id))
-    correspondence.invocations.append(_build_invocation("link", req.request_id, usage))
+    correspondence.invocations.append(ingest.build_invocation("link", req.request_id, usage))
 
     store.put_correspondence(correspondence)
     return req
@@ -177,7 +141,7 @@ async def generate_draft(correspondence_id: str, request_id: str, body: DraftReq
     )
     req.status = "drafted"
     correspondence.audit.append(AuditEntry(action="drafted", actor="agent", request_id=req.request_id))
-    correspondence.invocations.append(_build_invocation("draft", req.request_id, usage))
+    correspondence.invocations.append(ingest.build_invocation("draft", req.request_id, usage))
 
     store.put_correspondence(correspondence)
     return req

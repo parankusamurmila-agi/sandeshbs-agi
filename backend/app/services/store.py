@@ -96,6 +96,7 @@ def list_correspondences() -> List[CorrespondenceSummary]:
             meta=item.get("meta", {}),
             request_count=len(item.get("requests", [])),
             created_at=item["created_at"],
+            status=item.get("status", "extracted"),
         )
         for item in items
     ]

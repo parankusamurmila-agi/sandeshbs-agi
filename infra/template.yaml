@@ -114,6 +114,14 @@ Resources:
                   - - !Ref AgentCoreRuntimeArn
                     - !Sub "${AgentCoreRuntimeArn}/*"
                   - "*"
+              # Async self-invoke for background extraction (upload returns
+              # immediately; extract runs in a separate async invocation so it
+              # isn't bound by API Gateway's ~29s cap). Scoped to this stack's
+              # own functions to avoid a role<->function circular dependency.
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-*"
 
   BackendFunction:
     Type: AWS::Lambda::Function
@@ -125,7 +133,10 @@ Resources:
       # rewriting Code to the S3 location. Path is relative to this template.
       Code: ./build/lambda
       MemorySize: 1024
-      Timeout: 60
+      # 180s: large letters (e.g. a 38-request dossier) take ~40-90s to extract
+      # via one Bedrock Converse call. The Function URL below honors this
+      # timeout (API Gateway caps at ~29s, which 503s on big letters).
+      Timeout: 180
       Role: !GetAtt LambdaExecutionRole.Arn
       Environment:
         Variables:

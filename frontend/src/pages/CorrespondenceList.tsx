@@ -9,10 +9,29 @@ export default function CorrespondenceList() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listCorrespondence()
-      .then(setItems)
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load"))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    let timer: number | undefined;
+    async function load() {
+      try {
+        const data = await listCorrespondence();
+        if (cancelled) return;
+        setItems(data);
+        setError(null);
+        // Keep refreshing while any upload is still extracting in the background.
+        if (data.some((i) => i.status === "extracting")) {
+          timer = window.setTimeout(load, 5000);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
   }, []);
 
   if (loading) return <p>Loading…</p>;
@@ -39,8 +58,13 @@ export default function CorrespondenceList() {
         >
           <strong>{item.meta.product ?? item.filename}</strong>
           <div style={{ fontSize: "0.85rem", color: "#555" }}>
-            {item.meta.applicant ?? "Unknown applicant"} · {item.request_count} requests ·{" "}
-            {new Date(item.created_at).toLocaleString()}
+            {item.meta.applicant ?? "Unknown applicant"} ·{" "}
+            {item.status === "extracting"
+              ? "⏳ extracting…"
+              : item.status === "failed"
+                ? "⚠ extraction failed"
+                : `${item.request_count} requests`}{" "}
+            · {new Date(item.created_at).toLocaleString()}
           </div>
         </Link>
       ))}

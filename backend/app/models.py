@@ -134,7 +134,10 @@ class Correspondence(BaseModel):
     s3_key: str
     filename: str
     meta: CorrespondenceMeta = Field(default_factory=CorrespondenceMeta)
-    status: Literal["extracted"] = "extracted"
+    # "extracting" until the async extract worker finishes; then "extracted"
+    # (or "failed"). Letters predating async ingestion are stored as
+    # "extracted", which stays valid.
+    status: Literal["extracting", "extracted", "failed"] = "extracting"
     requests: List[HaRequest] = Field(default_factory=list)
     created_at: str = Field(default_factory=_now)
     audit: List[AuditEntry] = Field(default_factory=list)
@@ -147,6 +150,7 @@ class CorrespondenceSummary(BaseModel):
     meta: CorrespondenceMeta
     request_count: int
     created_at: str
+    status: str = "extracted"
 
 
 class IngestPathBody(BaseModel):

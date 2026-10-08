@@ -107,4 +107,5 @@ export interface CorrespondenceSummary {
   meta: CorrespondenceMeta;
   request_count: number;
   created_at: string;
+  status: string;
 }

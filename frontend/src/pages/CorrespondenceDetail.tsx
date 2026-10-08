@@ -24,10 +24,24 @@ export default function CorrespondenceDetail() {
 
   useEffect(() => {
     if (!id) return;
-    getCorrespondence(id).then((c) => {
+    let cancelled = false;
+    let timer: number | undefined;
+
+    async function load() {
+      const c = await getCorrespondence(id!);
+      if (cancelled) return;
       setCorrespondence(c);
-      setSelectedId(c.requests[0]?.request_id ?? null);
-    });
+      setSelectedId((prev) => prev ?? c.requests[0]?.request_id ?? null);
+      // Extraction runs asynchronously on the backend; poll until it finishes.
+      if (c.status === "extracting") {
+        timer = window.setTimeout(load, 4000);
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
   }, [id]);
 
   // Don't leak "show source" across questions -- reset whenever the
@@ -79,6 +93,18 @@ export default function CorrespondenceDetail() {
         {drugCount === 1 ? "" : "s"} identified
       </p>
       {error && <p style={{ color: "crimson" }}>{error}</p>}
+
+      {correspondence.status === "extracting" && (
+        <div className="card" style={{ background: "#f5f3ff", border: "1px solid #ddd6fe" }}>
+          <p style={{ margin: 0 }}>
+            ⏳ Extracting questions from the letter… large documents can take up to a minute. This page updates
+            automatically.
+          </p>
+        </div>
+      )}
+      {correspondence.status === "failed" && (
+        <p style={{ color: "crimson" }}>Extraction failed — see the Audit tab for details, or try re-uploading.</p>
+      )}
 
       <div style={{ display: "flex", gap: 8, margin: "12px 0" }}>
         <button className={tab === "requests" ? "" : "secondary"} onClick={() => setTab("requests")}>

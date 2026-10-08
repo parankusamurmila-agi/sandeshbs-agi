@@ -22,4 +22,16 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
-handler = Mangum(app)
+_asgi_handler = Mangum(app)
+
+
+def handler(event, context):
+    # Async self-invoke from ingest.trigger_extract carries {"task": "extract"}
+    # (not an HTTP event) -- run the extraction worker directly, bypassing the
+    # ASGI adapter. Everything else is a normal HTTP request for FastAPI.
+    if isinstance(event, dict) and event.get("task") == "extract":
+        from app.services import ingest
+
+        ingest.run_extract(event["correspondence_id"])
+        return {"ok": True}
+    return _asgi_handler(event, context)
