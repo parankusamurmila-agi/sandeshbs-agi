@@ -1,14 +1,13 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   HA Request & Response Agent backend -- S3 (PDFs) + DynamoDB (correspondence
-  records) + Lambda (FastAPI container image) + HTTP API. Hand-written
+  records) + Lambda (FastAPI zip package via Mangum) + HTTP API. Hand-written
   equivalent of infra/stacks/backend_stack.py, for deploying via the plain
-  AWS CLI when the CDK CLI (Node.js) isn't available.
+  AWS CLI when Docker (container image) and the CDK CLI (Node.js) aren't
+  available. Deploy with: aws cloudformation package + deploy. The zip build
+  omits mammoth/weasyprint (.docx conversion) since those need native libs.
 
 Parameters:
-  ImageUri:
-    Type: String
-    Description: Full ECR image URI (including tag) for the backend container image.
   BedrockModelId:
     Type: String
     Default: us.anthropic.claude-sonnet-5
@@ -92,9 +91,12 @@ Resources:
   BackendFunction:
     Type: AWS::Lambda::Function
     Properties:
-      PackageType: Image
-      Code:
-        ImageUri: !Ref ImageUri
+      Runtime: python3.12
+      Handler: app.main.handler
+      # Local path to the built deployment bundle (Linux-targeted deps + app
+      # code). `aws cloudformation package` zips this and uploads it to S3,
+      # rewriting Code to the S3 location. Path is relative to this template.
+      Code: ./build/lambda
       MemorySize: 1024
       Timeout: 60
       Role: !GetAtt LambdaExecutionRole.Arn

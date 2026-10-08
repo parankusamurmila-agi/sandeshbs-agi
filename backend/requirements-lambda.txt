@@ -1,0 +1,16 @@
+# Lambda (zip-package) dependency set: identical to requirements.txt EXCEPT it
+# omits mammoth + weasyprint, which link native shared libraries (Pango/cairo/
+# GDK-pixbuf/HarfBuzz) that a zip package can't carry. doc_converter imports
+# them lazily, so only .docx upload is affected -- PDF ingestion (all 5 sample
+# letters) works unchanged. Use requirements.txt (not this) for local dev and
+# the container-image build.
+fastapi==0.115.0
+mangum==0.17.0
+pydantic>=2.11.0,<3.0.0
+pypdf==5.0.1
+boto3>=1.43.0
+python-multipart==0.0.12
+python-dotenv==1.0.1
+langfuse>=2.36.0,<3.0.0
+strands-agents>=1.58.0,<2.0.0
+mcp>=1.23.0,<2.0.0
