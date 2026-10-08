@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  HA Request & Response Agent backend -- S3 (PDFs) + DynamoDB (correspondence
+  records) + Lambda (FastAPI container image) + HTTP API. Hand-written
+  equivalent of infra/stacks/backend_stack.py, for deploying via the plain
+  AWS CLI when the CDK CLI (Node.js) isn't available.
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: Full ECR image URI (including tag) for the backend container image.
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-sonnet-5
+  LangfusePublicKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+  LangfuseSecretKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+  LangfuseHost:
+    Type: String
+    Default: https://cloud.langfuse.com
+
+Resources:
+  PdfBucket:
+    Type: AWS::S3::Bucket
+    # No DeletionPolicy override -- defaults to Retain, so a stack delete
+    # won't silently drop uploaded PDFs. Empty the bucket manually first if
+    # you want a clean teardown.
+
+  CorrespondenceTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: HaCorrespondence
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: correspondence_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: correspondence_id
+          KeyType: HASH
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: HaResponseAgentBackendPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource: !GetAtt CorrespondenceTable.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub "${PdfBucket.Arn}/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt PdfBucket.Arn
+              # Hackathon-scoped: broad Bedrock invoke permission rather than
+              # enumerating every foundation-model/inference-profile ARN.
+              # Tighten the Resource before production use.
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:Converse
+                  - bedrock:ConverseStream
+                Resource: "*"
+
+  BackendFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      PackageType: Image
+      Code:
+        ImageUri: !Ref ImageUri
+      MemorySize: 1024
+      Timeout: 60
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          DYNAMODB_TABLE: !Ref CorrespondenceTable
+          S3_BUCKET: !Ref PdfBucket
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          LANGFUSE_PUBLIC_KEY: !Ref LangfusePublicKey
+          LANGFUSE_SECRET_KEY: !Ref LangfuseSecretKey
+          LANGFUSE_HOST: !Ref LangfuseHost
+
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref BackendFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*"
+
+  HttpApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: ha-response-agent-api
+      ProtocolType: HTTP
+      CorsConfiguration:
+        AllowOrigins:
+          - http://localhost:5173
+        AllowMethods:
+          - "*"
+        AllowHeaders:
+          - "*"
+
+  HttpApiIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref HttpApi
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !GetAtt BackendFunction.Arn
+      PayloadFormatVersion: "2.0"
+
+  HttpApiRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId: !Ref HttpApi
+      RouteKey: "ANY /{proxy+}"
+      Target: !Sub "integrations/${HttpApiIntegration}"
+
+  HttpApiStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref HttpApi
+      StageName: "$default"
+      AutoDeploy: true
+
+Outputs:
+  ApiUrl:
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/"
+  TableName:
+    Value: !Ref CorrespondenceTable
+  BucketName:
+    Value: !Ref PdfBucket

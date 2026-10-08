@@ -104,11 +104,12 @@ class HaRequest(ExtractedRequest):
 
 
 class Invocation(BaseModel):
-    """One Bedrock Converse call: either the letter-level `extract` call
-    (request_id=None) or a per-question `draft` call."""
+    """One agentic/LLM step: the letter-level `extract` call (request_id=None),
+    or a per-question `link` or `draft` agent run (each may make several
+    underlying Bedrock calls, aggregated into one Invocation)."""
 
     invocation_id: str = Field(default_factory=_uuid)
-    kind: Literal["extract", "draft"]
+    kind: Literal["extract", "link", "draft"]
     model_config = ConfigDict(protected_namespaces=())
 
     request_id: Optional[str] = None

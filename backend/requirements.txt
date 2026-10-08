@@ -1,6 +1,7 @@
 fastapi==0.115.0
 mangum==0.17.0
-pydantic==2.9.2
+# >=2.11.0 required by mcp (a strands-agents dependency); kept open below 3.0.
+pydantic>=2.11.0,<3.0.0
 pypdf==5.0.1
 # >=1.43.0 required: older botocore service models for bedrock-runtime's
 # Converse API reject the "cachePoint" system content block used for prompt
@@ -8,8 +9,16 @@ pypdf==5.0.1
 # 1.35.99 during testing).
 boto3>=1.43.0
 python-multipart==0.0.12
-uvicorn==0.30.6
+# >=0.31.1 required by mcp (a strands-agents dependency).
+uvicorn>=0.31.1,<1.0.0
 python-dotenv==1.0.1
 langfuse>=2.36.0,<3.0.0
 mammoth>=1.7.0,<2.0.0
 weasyprint>=61.0,<71.0
+# Agentic link/draft orchestration (Strands Agents SDK on Bedrock). Pinned
+# below 2.0 so its own "mcp" dependency resolves to mcp<2.0 (starlette>=0.27,
+# no ceiling) instead of mcp>=2.0 (which forces starlette>=1.0 and breaks
+# fastapi==0.115.0's starlette<0.39.0 requirement) -- verified by a clean
+# dependency-resolution test before pinning this way.
+strands-agents>=1.58.0,<2.0.0
+mcp>=1.23.0,<2.0.0

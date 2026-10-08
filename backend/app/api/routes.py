@@ -132,9 +132,9 @@ async def link_registration(correspondence_id: str, request_id: str) -> HaReques
     correspondence = _get_correspondence_or_404(correspondence_id)
     req = _get_request_or_404(correspondence, request_id)
 
-    req.linked_registration = agent_pipeline.match_registration_records(req.drug, correspondence.meta.source)
-    req.linked_submissions = agent_pipeline.match_submission_content(req.linked_registration)
-    req.linked_precedents = agent_pipeline.match_historic_precedents(req.linked_registration)
+    req.linked_registration, req.linked_submissions, req.linked_precedents, usage = agent_pipeline.link_request(
+        req.drug, correspondence.meta.source
+    )
     if req.status == "extracted":
         req.status = "linked"
 
@@ -146,6 +146,7 @@ async def link_registration(correspondence_id: str, request_id: str) -> HaReques
         else f"No registration record matched for '{req.drug}'."
     )
     correspondence.audit.append(AuditEntry(action="linked", actor="agent", note=note, request_id=req.request_id))
+    correspondence.invocations.append(_build_invocation("link", req.request_id, usage))
 
     store.put_correspondence(correspondence)
     return req

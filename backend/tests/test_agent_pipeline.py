@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 import pytest
@@ -99,6 +100,47 @@ def test_match_historic_precedents_returns_empty_when_no_precedent_for_applicati
     assert agent_pipeline.match_historic_precedents(registration) == []
 
 
+@patch("app.services.agent_pipeline._run_link_agent")
+def test_link_request_validates_agent_tool_results(mock_run_link_agent):
+    registration = agent_pipeline.match_registration_records("LUTATHERA", health_authority="FDA")
+    submissions = agent_pipeline.match_submission_content(registration)
+    precedents = agent_pipeline.match_historic_precedents(registration)
+    mock_run_link_agent.return_value = {
+        "registrations": [r.model_dump() for r in registration],
+        "submissions": [s.model_dump() for s in submissions],
+        "precedents": [p.model_dump() for p in precedents],
+        "usage": _USAGE,
+    }
+
+    linked_registration, linked_submissions, linked_precedents, usage = agent_pipeline.link_request(
+        "LUTATHERA", "FDA"
+    )
+
+    assert linked_registration == registration
+    assert linked_submissions == submissions
+    assert linked_precedents == precedents
+    assert usage is _USAGE
+    mock_run_link_agent.assert_called_once_with("LUTATHERA", "FDA")
+
+
+def test_link_request_handles_no_matches():
+    with patch("app.services.agent_pipeline._run_link_agent") as mock_run_link_agent:
+        mock_run_link_agent.return_value = {
+            "registrations": [],
+            "submissions": [],
+            "precedents": [],
+            "usage": _USAGE,
+        }
+        linked_registration, linked_submissions, linked_precedents, usage = agent_pipeline.link_request(
+            "SomeUnknownDrugXYZ", None
+        )
+
+    assert linked_registration == []
+    assert linked_submissions == []
+    assert linked_precedents == []
+    assert usage is _USAGE
+
+
 def test_select_template_matches_region():
     fda = agent_pipeline._select_template("FDA")
     ema = agent_pipeline._select_template("EMA")
@@ -109,9 +151,16 @@ def test_select_template_matches_region():
     assert unknown["template_id"] == "TEMPLATE-GENERIC-DOSSIER-RESPONSE"
 
 
-@patch("app.services.agent_pipeline.call_tool")
-def test_draft_response_includes_all_evidence_sources_and_region_terms(mock_call_tool):
-    mock_call_tool.return_value = ({"text": "Draft response text.", "citations": ["REG-US-NDA-205930"]}, _USAGE)
+@patch("app.services.agent_pipeline._run_draft_agent")
+def test_draft_response_includes_all_evidence_sources_and_region_terms(mock_run_draft_agent):
+    mock_run_draft_agent.return_value = (
+        {
+            "text": "Draft response text.",
+            "citations": ["REG-US-NDA-205930"],
+            "template_id": "TEMPLATE-FDA-DEFICIENCY-RESPONSE",
+        },
+        _USAGE,
+    )
     registration = agent_pipeline.match_registration_records("LUTATHERA", health_authority="FDA")
     submissions = agent_pipeline.match_submission_content(registration)
     precedents = agent_pipeline.match_historic_precedents(registration)
@@ -123,17 +172,21 @@ def test_draft_response_includes_all_evidence_sources_and_region_terms(mock_call
     assert draft.text == "Draft response text."
     assert draft.template_id == "TEMPLATE-FDA-DEFICIENCY-RESPONSE"
     assert usage is _USAGE
-    kwargs = mock_call_tool.call_args.kwargs
-    assert kwargs["tool_name"] == "draft_response"
-    assert "Be concise." in kwargs["user_text"]
-    assert "REG-US-NDA-205930" in kwargs["user_text"]
-    assert "CDER" in kwargs["user_text"]
-    assert "SUB-NDA-205930" in kwargs["user_text"]
+    payload = mock_run_draft_agent.call_args.args[0]
+    payload_text = json.dumps(payload)
+    assert payload["user_direction"] == "Be concise."
+    assert payload["health_authority"] == "FDA"
+    assert "REG-US-NDA-205930" in payload_text
+    assert "CDER" in payload_text
+    assert "SUB-NDA-205930" in payload_text
 
 
-@patch("app.services.agent_pipeline.call_tool")
-def test_draft_response_handles_no_linked_evidence(mock_call_tool):
-    mock_call_tool.return_value = ({"text": "Draft response text.", "citations": []}, _USAGE)
+@patch("app.services.agent_pipeline._run_draft_agent")
+def test_draft_response_handles_no_linked_evidence(mock_run_draft_agent):
+    mock_run_draft_agent.return_value = (
+        {"text": "Draft response text.", "citations": [], "template_id": "TEMPLATE-GENERIC-DOSSIER-RESPONSE"},
+        _USAGE,
+    )
 
     draft, _usage = agent_pipeline.draft_response(
         _sample_request(), [], [], [], CorrespondenceMeta(source=None), direction=None
@@ -141,10 +194,10 @@ def test_draft_response_handles_no_linked_evidence(mock_call_tool):
 
     assert draft.text == "Draft response text."
     assert draft.template_id == "TEMPLATE-GENERIC-DOSSIER-RESPONSE"
-    kwargs = mock_call_tool.call_args.kwargs
-    assert '"linked_registration_records": []' in kwargs["user_text"]
-    assert '"linked_submission_content": []' in kwargs["user_text"]
-    assert '"linked_historic_precedents": []' in kwargs["user_text"]
+    payload = mock_run_draft_agent.call_args.args[0]
+    assert payload["linked_registration_records"] == []
+    assert payload["linked_submission_content"] == []
+    assert payload["linked_historic_precedents"] == []
 
 
 def test_as_list_passes_through_native_list():

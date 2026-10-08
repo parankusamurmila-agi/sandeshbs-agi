@@ -48,7 +48,7 @@ export interface Draft {
 
 export interface Invocation {
   invocation_id: string;
-  kind: "extract" | "draft";
+  kind: "extract" | "link" | "draft";
   request_id?: string | null;
   model_id: string;
   input_tokens: number;

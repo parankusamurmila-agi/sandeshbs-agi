@@ -1,32 +1,41 @@
 """The HA Request & Response agent.
 
-1. extract_letter               - read the raw PDF directly and find every
-                                   distinct HA request/question, tagging each
-                                   with the specific drug/product it concerns.
-2. match_registration_records    - deterministic (zero-LLM) lookup of a
-                                   request's drug against the mock
-                                   registration/application tracking records,
-                                   optionally narrowed by issuing health
-                                   authority.
-   match_submission_content      - deterministic lookup of the submission
-                                   documents/datasets tied to the matched
-                                   registration record(s) (via their own
-                                   `related_submission_doc_ids`).
-   match_historic_precedents     - deterministic lookup of prior HA
-                                   deficiencies/responses for the same
-                                   application number, for precedent.
-3. draft_response               - draft a grounded, CTD/eCTD-style, region-
-                                   aware response for one request, using the
-                                   matched registration record(s), submission
-                                   content, and historic precedent as
-                                   evidence, with a template selected by
-                                   region.
+1. extract_letter      - read the raw PDF directly and find every distinct HA
+                          request/question, tagging each with the specific
+                          drug/product it concerns. One forced tool-use
+                          Bedrock Converse call.
+2. link_request         - a Strands agent (_run_link_agent) decides which of
+                          three deterministic, zero-LLM matchers to call for
+                          a request's drug: match_registration_records (fuzzy
+                          match against mock registration/application
+                          tracking records, narrowed by issuing health
+                          authority), match_submission_content (the matched
+                          registration record's own `related_submission_doc_ids`),
+                          and match_historic_precedents (prior HA deficiencies
+                          for the same application number). Only the choice of
+                          which tools to call is agentic -- each tool's return
+                          value is exactly what the underlying deterministic
+                          function produced, so the evidence shown to the
+                          human reviewer is as deterministic as before.
+3. draft_response       - a Strands agent (_run_draft_agent) drafts a
+                          grounded, CTD/eCTD-style, region-aware response for
+                          one request, using the matched registration
+                          record(s), submission content, and historic
+                          precedent -- passed in as plain context, not as
+                          tools, so the agent can never draft against
+                          evidence the human didn't already review at the
+                          link step. Its only tool is select_template_tool,
+                          so the one genuine judgment call (which regional
+                          template fits) is agent-decided; the final
+                          text/citations are produced via structured output.
 
-Steps 1 and 3 are each one forced tool-use Bedrock Converse call; step 2's
-three matchers are plain Python with no model call. Kept deliberately
-separate and synchronous so the orchestrating FastAPI endpoints can run them
-on demand within API Gateway's request timeout -- no background workers or
-autonomous looping needed for a hackathon-scale demo.
+Each step is still triggered on demand by its own FastAPI endpoint, kept
+synchronous so it runs within API Gateway's request timeout -- no background
+workers needed at this scale. match_registration_records/
+match_submission_content/match_historic_precedents/_select_template remain
+independently callable, deterministic, zero-LLM functions in their own
+right -- the Strands agents are a thin orchestration layer on top of them,
+not a replacement for them.
 """
 
 from __future__ import annotations
@@ -37,6 +46,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel, Field
+from strands import Agent, tool
+from strands.models import BedrockModel
+
+from app.config import AWS_REGION, BEDROCK_MODEL_ID
 from app.models import (
     CorrespondenceMeta,
     Draft,
@@ -149,19 +163,6 @@ EXTRACT_SCHEMA = {
         },
     },
     "required": ["meta", "requests"],
-}
-
-DRAFT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "text": {"type": "string"},
-        "citations": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "registration_ids and/or related_submission_doc_ids actually cited in the text.",
-        },
-    },
-    "required": ["text"],
 }
 
 _REGION_TERMINOLOGY: Dict[str, Dict[str, str]] = {
@@ -308,6 +309,119 @@ def match_historic_precedents(linked_registration: List[RegistrationRecord]) -> 
     return [HistoricPrecedent.model_validate(prec) for prec in matches]
 
 
+def _usage_from_metrics(agent: Agent, model_id: str) -> UsageInfo:
+    """Aggregate token usage across every underlying Bedrock call an agent run
+    made (one Strands agent run can be several tool-call round trips) into a
+    single UsageInfo, so one agent run still records as one Invocation --
+    matching extract_letter/draft_response's existing one-call-one-Invocation
+    semantics."""
+    usage = agent.event_loop_metrics.accumulated_usage
+    return UsageInfo(
+        model_id=model_id,
+        input_tokens=usage.get("inputTokens", 0),
+        output_tokens=usage.get("outputTokens", 0),
+        cache_read_input_tokens=usage.get("cacheReadInputTokens", 0),
+        cache_write_input_tokens=usage.get("cacheWriteInputTokens", 0),
+    )
+
+
+def _run_link_agent(drug: Optional[str], health_authority: Optional[str]) -> Dict[str, Any]:
+    """Builds a Strands agent that decides which of the three deterministic
+    matchers to call for this drug. Each tool wrapper calls straight through to
+    the real match_* function and stores the typed result in `state`; the
+    agent's own final reply is never parsed for data -- only `state`, populated
+    by the tools it actually chose to call, is read afterward."""
+    state: Dict[str, List[Dict[str, Any]]] = {"registrations": [], "submissions": [], "precedents": []}
+
+    @tool
+    def match_registration_records_tool(
+        drug: str, health_authority: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Look up registration/application tracking records for a drug, optionally
+        narrowed by issuing health authority. Call this first.
+
+        Args:
+            drug: The drug/product name this request concerns.
+            health_authority: The issuing health authority, to disambiguate when
+                more than one registration shares the product name.
+
+        Returns:
+            Matching registration records.
+        """
+        records = match_registration_records(drug, health_authority)
+        state["registrations"] = [r.model_dump() for r in records]
+        return state["registrations"]
+
+    @tool
+    def match_submission_content_tool() -> List[Dict[str, Any]]:
+        """Look up the submission documents/datasets tied to the registration
+        record(s) already found by match_registration_records_tool -- call that
+        tool first. Skip this if no registration record was found.
+
+        Returns:
+            Matching submission documents.
+        """
+        registrations = [RegistrationRecord.model_validate(r) for r in state["registrations"]]
+        submissions = match_submission_content(registrations)
+        state["submissions"] = [s.model_dump() for s in submissions]
+        return state["submissions"]
+
+    @tool
+    def match_historic_precedents_tool() -> List[Dict[str, Any]]:
+        """Look up prior HA deficiencies/responses resolved on the same application
+        as the registration record(s) already found by match_registration_records_tool
+        -- call that tool first. Skip this if no registration record was found.
+
+        Returns:
+            Matching historic precedents.
+        """
+        registrations = [RegistrationRecord.model_validate(r) for r in state["registrations"]]
+        precedents = match_historic_precedents(registrations)
+        state["precedents"] = [p.model_dump() for p in precedents]
+        return state["precedents"]
+
+    agent = Agent(
+        # streaming=False: ConverseStream dropped mid-response ("Response ended
+        # prematurely") in testing, while the plain Converse API (used by
+        # call_tool for extract_letter) was reliable -- so agent runs use the
+        # same non-streaming call.
+        model=BedrockModel(model_id=BEDROCK_MODEL_ID, region_name=AWS_REGION, streaming=False),
+        tools=[match_registration_records_tool, match_submission_content_tool, match_historic_precedents_tool],
+        system_prompt=get_prompt("ha-link-request"),
+        # Strands' default callback handler streams model output straight to
+        # stdout -- unwanted noise in a server process, and (confirmed against
+        # real Bedrock) it can crash outright on a console codepage that can't
+        # encode a character the model emits (e.g. cp1252 on Windows).
+        callback_handler=None,
+    )
+    agent(f"drug: {drug or ''}\nissuing_health_authority: {health_authority or ''}")
+
+    return {
+        "registrations": state["registrations"],
+        "submissions": state["submissions"],
+        "precedents": state["precedents"],
+        "usage": _usage_from_metrics(agent, BEDROCK_MODEL_ID),
+    }
+
+
+def link_request(
+    drug: Optional[str], health_authority: Optional[str] = None
+) -> tuple[List[RegistrationRecord], List[SubmissionDocument], List[HistoricPrecedent], UsageInfo]:
+    """Agent-orchestrated replacement for calling match_registration_records /
+    match_submission_content / match_historic_precedents directly: a Strands
+    agent decides which of those three (tool-wrapped, otherwise unchanged)
+    deterministic lookups to call for this drug. Only the choice of which tools
+    to call is agentic -- each tool's return value is exactly what the
+    underlying deterministic function produced."""
+    result = _run_link_agent(drug, health_authority)
+    return (
+        [RegistrationRecord.model_validate(r) for r in result["registrations"]],
+        [SubmissionDocument.model_validate(s) for s in result["submissions"]],
+        [HistoricPrecedent.model_validate(p) for p in result["precedents"]],
+        result["usage"],
+    )
+
+
 def _select_template(health_authority: Optional[str]) -> Optional[Dict[str, Any]]:
     """Picks the response template whose `region` matches the given health
     authority, falling back to the generic template (or the first template, if
@@ -379,6 +493,59 @@ def extract_letter(
     return meta, requests, usage
 
 
+class _DraftOutput(BaseModel):
+    text: str
+    citations: List[str] = Field(default_factory=list)
+
+
+def _run_draft_agent(payload: Dict[str, Any]) -> tuple[Dict[str, Any], UsageInfo]:
+    """Builds a Strands agent with one tool, select_template_tool, so the agent
+    itself decides which regional template fits (today's one piece of
+    draft-time Python judgment) instead of Python pre-selecting it. All
+    evidence stays plain context, exactly as before -- the agent gets no
+    evidence-fetching tools, so it can never draft against anything the human
+    didn't already review at the link step."""
+    state: Dict[str, Any] = {"template": None}
+
+    @tool
+    def select_template_tool(health_authority: Optional[str] = None) -> Dict[str, Any]:
+        """Select the CTD/eCTD response template and section structure for the
+        given health authority. Call this once, before drafting.
+
+        Args:
+            health_authority: The matched registration record's health authority
+                (or the letter's issuing health authority if nothing was linked).
+
+        Returns:
+            The selected template: template_id, name, and section list. Falls
+            back to the generic template if nothing matches.
+        """
+        template = _select_template(health_authority)
+        state["template"] = template
+        return template or {}
+
+    agent = Agent(
+        # streaming=False: ConverseStream dropped mid-response ("Response ended
+        # prematurely") in testing, while the plain Converse API (used by
+        # call_tool for extract_letter) was reliable -- so agent runs use the
+        # same non-streaming call.
+        model=BedrockModel(model_id=BEDROCK_MODEL_ID, region_name=AWS_REGION, streaming=False),
+        tools=[select_template_tool],
+        system_prompt=get_prompt("ha-draft-response"),
+        callback_handler=None,
+    )
+    # `agent.structured_output(...)` as a separate call after the fact is deprecated
+    # (and, confirmed against real Bedrock, never actually runs the tool loop --
+    # it forces the output schema directly, so select_template_tool never gets
+    # called). Passing structured_output_model into the same invocation runs the
+    # normal tool loop first and *then* forces the final schema.
+    agent_result = agent(json.dumps(payload, indent=2), structured_output_model=_DraftOutput)
+
+    result = agent_result.structured_output.model_dump()
+    result["template_id"] = state["template"]["template_id"] if state["template"] else None
+    return result, _usage_from_metrics(agent, BEDROCK_MODEL_ID)
+
+
 def draft_response(
     request: HaRequest,
     linked_registration: List[RegistrationRecord],
@@ -406,35 +573,21 @@ def draft_response(
     precedent_detail = [prec.model_dump() for prec in linked_precedents]
 
     region_ha = linked_registration[0].health_authority if linked_registration else correspondence_meta.source
-    template = _select_template(region_ha)
 
-    user_text = json.dumps(
-        {
-            "question": {
-                "request_id": request.request_id,
-                "section": request.section,
-                "drug": request.drug,
-                "text": request.text,
-            },
-            "linked_registration_records": registration_detail,
-            "linked_submission_content": submission_detail,
-            "linked_historic_precedents": precedent_detail,
-            "region_terminology": _region_terminology(region_ha),
-            "template": template,
-            "user_direction": direction,
+    payload = {
+        "question": {
+            "request_id": request.request_id,
+            "section": request.section,
+            "drug": request.drug,
+            "text": request.text,
         },
-        indent=2,
-    )
-    result, usage = call_tool(
-        system_prompt=get_prompt("ha-draft-response"),
-        user_text=user_text,
-        tool_name="draft_response",
-        tool_description="Draft a CTD/eCTD-style, region-appropriate response to this HA question.",
-        tool_schema=DRAFT_SCHEMA,
-        max_tokens=4096,
-    )
-    if "citations" in result:
-        result["citations"] = _as_list(result["citations"])
+        "linked_registration_records": registration_detail,
+        "linked_submission_content": submission_detail,
+        "linked_historic_precedents": precedent_detail,
+        "region_terminology": _region_terminology(region_ha),
+        "health_authority": region_ha,
+        "user_direction": direction,
+    }
+    result, usage = _run_draft_agent(payload)
     draft = Draft.model_validate(result)
-    draft.template_id = template["template_id"] if template else None
     return draft, usage
