@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ingestFromPath, uploadCorrespondenceFiles } from "../api/client";
+import Button from "../components/Button";
 import type { Correspondence } from "../types";
 
 type Mode = "files" | "path";
@@ -48,10 +49,11 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="card" style={{ maxWidth: 560, margin: "0 auto" }}>
+    <div className="upload-shell">
+      <div className="card upload-card">
       <h2>Upload HA correspondence</h2>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <div className="upload-toggle">
         <button className={mode === "files" ? "" : "secondary"} onClick={() => setMode("files")} disabled={busy}>
           Upload files
         </button>
@@ -76,11 +78,11 @@ export default function UploadPage() {
             )}
             {busy && <p>Reading each PDF/Word document and extracting every HA question — one agent call per document…</p>}
           </div>
-          {error && <p style={{ color: "crimson" }}>{error}</p>}
+          {error && <p className="error-text">{error}</p>}
           <div style={{ marginTop: 12 }}>
-            <button onClick={handleFilesUpload} disabled={files.length === 0 || busy}>
+            <Button onClick={handleFilesUpload} loading={busy} disabled={files.length === 0}>
               {busy ? "Extracting…" : "Upload & extract"}
-            </button>
+            </Button>
           </div>
         </>
       ) : (
@@ -98,14 +100,15 @@ export default function UploadPage() {
             disabled={busy}
           />
           {busy && <p>Listing documents at that path and extracting each one — one agent call per document…</p>}
-          {error && <p style={{ color: "crimson" }}>{error}</p>}
+          {error && <p className="error-text">{error}</p>}
           <div style={{ marginTop: 12 }}>
-            <button onClick={handlePathIngest} disabled={!path.trim() || busy}>
+            <Button onClick={handlePathIngest} loading={busy} disabled={!path.trim()}>
               {busy ? "Extracting…" : "Fetch & extract"}
-            </button>
+            </Button>
           </div>
         </>
       )}
+      </div>
     </div>
   );
 }

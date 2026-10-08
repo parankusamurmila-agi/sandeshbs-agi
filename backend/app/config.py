@@ -27,6 +27,17 @@ S3_BUCKET = os.environ.get("S3_BUCKET", "ha-response-agent-local")
 # entirely -- used for local development without AWS resources provisioned.
 LOCAL_STORE = os.environ.get("LOCAL_STORE", "false").lower() == "true"
 
+# Where app.services.prompts reads prompts from: "local" (app/data/prompts.json),
+# "langfuse", or "bedrock" (Amazon Bedrock Prompt Management). Leave unset for the
+# backward-compatible default: "langfuse" when the Langfuse keys below are set,
+# else "local". prompts.json always backs every source as a fallback.
+PROMPT_SOURCE = os.environ.get("PROMPT_SOURCE", "").strip().lower()
+
+# Bedrock Prompt Management version to read when PROMPT_SOURCE="bedrock": a
+# published numeric version (e.g. "1") to pin, or "DRAFT" (default) for the
+# latest edited copy. Prompt names are resolved to ids via ListPrompts.
+BEDROCK_PROMPT_VERSION = os.environ.get("BEDROCK_PROMPT_VERSION", "DRAFT").strip()
+
 # Optional: when both keys are set, app.services.prompts fetches prompts from
 # Langfuse instead of its local defaults. See backend/.env.example.
 LANGFUSE_PUBLIC_KEY = os.environ.get("LANGFUSE_PUBLIC_KEY", "")

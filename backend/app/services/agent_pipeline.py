@@ -48,7 +48,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 from strands import Agent, tool
-from strands.models import BedrockModel
+from strands.models import BedrockModel, CacheConfig
 
 from app.config import AWS_REGION, BEDROCK_MODEL_ID
 from app.models import (
@@ -385,7 +385,19 @@ def _run_link_agent(drug: Optional[str], health_authority: Optional[str]) -> Dic
         # prematurely") in testing, while the plain Converse API (used by
         # call_tool for extract_letter) was reliable -- so agent runs use the
         # same non-streaming call.
-        model=BedrockModel(model_id=BEDROCK_MODEL_ID, region_name=AWS_REGION, streaming=False),
+        model=BedrockModel(
+            model_id=BEDROCK_MODEL_ID,
+            region_name=AWS_REGION,
+            streaming=False,
+            # Cache the (static, reused) system prompt so repeat link/draft calls
+            # within Bedrock's cache TTL read it from cache instead of re-ingesting
+            # it -- mirrors extract_letter's cachePoint (bedrock_client.call_tool).
+            # strategy="auto" resolves to Anthropic caching for Claude model ids
+            # (and no-ops for others); Bedrock silently skips the cache when the
+            # prefix is under the model's min cacheable size, so it's always safe.
+            # _usage_from_metrics already surfaces cacheRead/WriteInputTokens.
+            cache_config=CacheConfig(strategy="auto"),
+        ),
         tools=[match_registration_records_tool, match_submission_content_tool, match_historic_precedents_tool],
         system_prompt=get_prompt("ha-link-request"),
         # Strands' default callback handler streams model output straight to
@@ -529,7 +541,19 @@ def _run_draft_agent(payload: Dict[str, Any]) -> tuple[Dict[str, Any], UsageInfo
         # prematurely") in testing, while the plain Converse API (used by
         # call_tool for extract_letter) was reliable -- so agent runs use the
         # same non-streaming call.
-        model=BedrockModel(model_id=BEDROCK_MODEL_ID, region_name=AWS_REGION, streaming=False),
+        model=BedrockModel(
+            model_id=BEDROCK_MODEL_ID,
+            region_name=AWS_REGION,
+            streaming=False,
+            # Cache the (static, reused) system prompt so repeat link/draft calls
+            # within Bedrock's cache TTL read it from cache instead of re-ingesting
+            # it -- mirrors extract_letter's cachePoint (bedrock_client.call_tool).
+            # strategy="auto" resolves to Anthropic caching for Claude model ids
+            # (and no-ops for others); Bedrock silently skips the cache when the
+            # prefix is under the model's min cacheable size, so it's always safe.
+            # _usage_from_metrics already surfaces cacheRead/WriteInputTokens.
+            cache_config=CacheConfig(strategy="auto"),
+        ),
         tools=[select_template_tool],
         system_prompt=get_prompt("ha-draft-response"),
         callback_handler=None,

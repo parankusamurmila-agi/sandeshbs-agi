@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listCorrespondence } from "../api/client";
+import Spinner from "../components/Spinner";
 import type { CorrespondenceSummary } from "../types";
 
 export default function CorrespondenceList() {
@@ -34,8 +35,8 @@ export default function CorrespondenceList() {
     };
   }, []);
 
-  if (loading) return <p>Loading…</p>;
-  if (error) return <p style={{ color: "crimson" }}>{error}</p>;
+  if (loading) return <Spinner label="Loading correspondence…" />;
+  if (error) return <p className="error-text">{error}</p>;
 
   if (items.length === 0) {
     return (

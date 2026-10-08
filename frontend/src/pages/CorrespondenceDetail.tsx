@@ -7,6 +7,7 @@ import EvidencePanel from "../components/EvidencePanel";
 import InvocationsPanel from "../components/InvocationsPanel";
 import PdfSourceViewer from "../components/PdfSourceViewer";
 import RequestList from "../components/RequestList";
+import Spinner from "../components/Spinner";
 import type { Correspondence } from "../types";
 
 const ACTOR = "demo-user";
@@ -77,7 +78,7 @@ export default function CorrespondenceDetail() {
     }
   }
 
-  if (!correspondence) return <p>Loading…</p>;
+  if (!correspondence) return <Spinner label="Loading correspondence…" />;
 
   const drugCount = new Set(correspondence.requests.map((r) => r.drug)).size;
   const busy = selectedRequest ? busyIds.has(selectedRequest.request_id) : false;
@@ -92,7 +93,7 @@ export default function CorrespondenceDetail() {
         {correspondence.requests.length} question{correspondence.requests.length === 1 ? "" : "s"} · {drugCount} drug
         {drugCount === 1 ? "" : "s"} identified
       </p>
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
+      {error && <p className="error-text">{error}</p>}
 
       {correspondence.status === "extracting" && (
         <div className="card" style={{ background: "#f5f3ff", border: "1px solid #ddd6fe" }}>
@@ -103,7 +104,7 @@ export default function CorrespondenceDetail() {
         </div>
       )}
       {correspondence.status === "failed" && (
-        <p style={{ color: "crimson" }}>Extraction failed — see the Audit tab for details, or try re-uploading.</p>
+        <p className="error-text">Extraction failed — see the Audit tab for details, or try re-uploading.</p>
       )}
 
       <div style={{ display: "flex", gap: 8, margin: "12px 0" }}>

@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import type { HaRequest } from "../types";
+import Button from "./Button";
 
 interface Props {
   request: HaRequest;
@@ -10,18 +12,29 @@ export default function EvidencePanel({ request, busy, onLink }: Props) {
   const { linked_registration, linked_submissions, linked_precedents, status, drug } = request;
   const hasAnyEvidence = linked_registration.length > 0 || linked_submissions.length > 0 || linked_precedents.length > 0;
 
+  // Track our own click so the spinner shows only when linking (the parent
+  // shares `busy` with draft generation on the same question).
+  const [linking, setLinking] = useState(false);
+  useEffect(() => {
+    if (!busy) setLinking(false);
+  }, [busy]);
+  const handleLink = () => {
+    setLinking(true);
+    onLink();
+  };
+
   if (!hasAnyEvidence) {
     return (
       <div>
-        <p style={{ color: "#777", fontSize: "0.85rem" }}>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
           {status === "extracted"
             ? `No evidence linked yet for "${drug}".`
             : `No registration record matched for "${drug}" (so no submission content or precedent either).`}
         </p>
         {status !== "approved" && (
-          <button onClick={onLink} disabled={busy}>
+          <Button onClick={handleLink} loading={busy && linking} disabled={busy}>
             Link registration record
-          </button>
+          </Button>
         )}
       </div>
     );
@@ -96,9 +109,15 @@ export default function EvidencePanel({ request, busy, onLink }: Props) {
       )}
 
       {status !== "approved" && (
-        <button className="secondary" onClick={onLink} disabled={busy} style={{ marginTop: 12 }}>
+        <Button
+          className="secondary"
+          onClick={handleLink}
+          loading={busy && linking}
+          disabled={busy}
+          style={{ marginTop: 12 }}
+        >
           Re-link registration record
-        </button>
+        </Button>
       )}
     </div>
   );

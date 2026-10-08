@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import type { HaRequest } from "../types";
+import Button from "./Button";
+
+type PendingAction = "generate" | "save" | "approve" | null;
 
 interface Props {
   request: HaRequest;
@@ -12,10 +15,17 @@ interface Props {
 export default function DraftEditor({ request, busy, onGenerate, onSave, onApprove }: Props) {
   const [direction, setDirection] = useState(request.direction ?? "");
   const [draftText, setDraftText] = useState(request.draft?.text ?? "");
+  // Which action is in flight, so the spinner shows only on the clicked button
+  // (the parent shares one `busy` flag across link/generate/save/approve).
+  const [pending, setPending] = useState<PendingAction>(null);
 
   useEffect(() => {
     setDraftText(request.draft?.text ?? "");
   }, [request.request_id, request.draft?.text]);
+
+  useEffect(() => {
+    if (!busy) setPending(null);
+  }, [busy]);
 
   const isDirty = draftText !== (request.draft?.text ?? "");
   const canGenerate = request.status !== "extracted";
@@ -31,12 +41,20 @@ export default function DraftEditor({ request, busy, onGenerate, onSave, onAppro
         disabled={busy || request.status === "approved"}
       />
       <div style={{ marginTop: 8 }}>
-        <button
-          onClick={() => onGenerate(direction)}
+        <Button
+          loading={busy && pending === "generate"}
+          onClick={() => {
+            setPending("generate");
+            onGenerate(direction);
+          }}
           disabled={busy || !canGenerate || request.status === "approved"}
         >
-          {request.draft ? "Regenerate draft" : "Generate draft"}
-        </button>
+          {busy && pending === "generate"
+            ? "Generating…"
+            : request.draft
+              ? "Regenerate draft"
+              : "Generate draft"}
+        </Button>
         {!canGenerate && (
           <p style={{ color: "#a15c00", fontSize: "0.8rem", marginTop: 4 }}>
             Link a registration record before generating a draft.
@@ -64,16 +82,27 @@ export default function DraftEditor({ request, busy, onGenerate, onSave, onAppro
             </div>
           )}
           <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
-            <button
+            <Button
               className="secondary"
-              onClick={() => onSave(draftText)}
+              loading={busy && pending === "save"}
+              onClick={() => {
+                setPending("save");
+                onSave(draftText);
+              }}
               disabled={busy || !isDirty || request.status === "approved"}
             >
               Save edit
-            </button>
-            <button onClick={() => onApprove(draftText)} disabled={busy || request.status === "approved"}>
+            </Button>
+            <Button
+              loading={busy && pending === "approve"}
+              onClick={() => {
+                setPending("approve");
+                onApprove(draftText);
+              }}
+              disabled={busy || request.status === "approved"}
+            >
               {request.status === "approved" ? "Approved" : "Approve"}
-            </button>
+            </Button>
           </div>
         </>
       )}
