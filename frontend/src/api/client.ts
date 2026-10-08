@@ -33,6 +33,10 @@ export function getCorrespondence(id: string): Promise<Correspondence> {
   return request<Correspondence>(`/correspondence/${id}`);
 }
 
+export function getPdfUrl(correspondenceId: string): string {
+  return `${BASE_URL}/correspondence/${correspondenceId}/pdf`;
+}
+
 export function linkRegistration(correspondenceId: string, requestId: string): Promise<HaRequest> {
   return request<HaRequest>(`/correspondence/${correspondenceId}/requests/${requestId}/link`, {
     method: "POST",

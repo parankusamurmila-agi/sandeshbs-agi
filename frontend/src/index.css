@@ -117,6 +117,13 @@ input[type="text"] {
   align-items: start;
 }
 
+.request-detail {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
 .request-list-item {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -143,6 +150,15 @@ input[type="text"] {
   color: #555;
   padding: 4px 0;
   border-bottom: 1px dashed var(--border);
+}
+
+.pdf-source-viewer {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  margin: 8px 0;
+  background: var(--bg-soft);
+  overflow: auto;
 }
 
 .upload-drop {

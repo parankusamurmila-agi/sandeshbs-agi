@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import Response
 
 from app.models import (
     AuditEntry,
@@ -114,6 +115,13 @@ async def list_correspondence() -> List[CorrespondenceSummary]:
 @router.get("/correspondence/{correspondence_id}", response_model=Correspondence)
 async def get_correspondence(correspondence_id: str) -> Correspondence:
     return _get_correspondence_or_404(correspondence_id)
+
+
+@router.get("/correspondence/{correspondence_id}/pdf")
+async def get_correspondence_pdf(correspondence_id: str) -> Response:
+    correspondence = _get_correspondence_or_404(correspondence_id)
+    pdf_bytes = store.get_pdf_bytes(correspondence)
+    return Response(content=pdf_bytes, media_type="application/pdf")
 
 
 @router.post(

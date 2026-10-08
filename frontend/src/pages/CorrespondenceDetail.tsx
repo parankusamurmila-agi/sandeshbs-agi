@@ -5,6 +5,7 @@ import AuditTrail from "../components/AuditTrail";
 import DraftEditor from "../components/DraftEditor";
 import EvidencePanel from "../components/EvidencePanel";
 import InvocationsPanel from "../components/InvocationsPanel";
+import PdfSourceViewer from "../components/PdfSourceViewer";
 import RequestList from "../components/RequestList";
 import type { Correspondence } from "../types";
 
@@ -19,6 +20,7 @@ export default function CorrespondenceDetail() {
   const [tab, setTab] = useState<Tab>("requests");
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [showSource, setShowSource] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -27,6 +29,12 @@ export default function CorrespondenceDetail() {
       setSelectedId(c.requests[0]?.request_id ?? null);
     });
   }, [id]);
+
+  // Don't leak "show source" across questions -- reset whenever the
+  // selected question changes.
+  useEffect(() => {
+    setShowSource(false);
+  }, [selectedId]);
 
   const selectedRequest = correspondence?.requests.find((r) => r.request_id === selectedId) ?? null;
 
@@ -92,7 +100,7 @@ export default function CorrespondenceDetail() {
           </div>
 
           {selectedRequest && (
-            <div className="card">
+            <div className="card request-detail">
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <h3>
                   #{selectedRequest.request_id} · {selectedRequest.drug}
@@ -101,6 +109,17 @@ export default function CorrespondenceDetail() {
                   Source: page {selectedRequest.source.page} — "{selectedRequest.source.quote}"
                 </span>
               </div>
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", marginTop: 4 }}>
+                <input type="checkbox" checked={showSource} onChange={(e) => setShowSource(e.target.checked)} />
+                Show source in PDF
+              </label>
+              {showSource && (
+                <PdfSourceViewer
+                  correspondenceId={correspondence.correspondence_id}
+                  page={selectedRequest.source.page}
+                  quote={selectedRequest.source.quote}
+                />
+              )}
               <p>{selectedRequest.text}</p>
               {selectedRequest.referenced_items.length > 0 && (
                 <p style={{ fontSize: "0.85rem", color: "#555" }}>

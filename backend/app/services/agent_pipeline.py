@@ -46,7 +46,7 @@ from app.models import (
     RegistrationRecord,
     SubmissionDocument,
 )
-from app.services.bedrock_client import UsageInfo, call_tool
+from app.services.bedrock_client import BedrockToolCallError, UsageInfo, call_tool
 from app.services.prompts import get_prompt
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -111,7 +111,16 @@ EXTRACT_SCHEMA = {
                             "product's name on every request in that case."
                         ),
                     },
-                    "text": {"type": "string", "description": "Full verbatim text of this request/question."},
+                    "text": {
+                        "type": "string",
+                        "description": (
+                            "A clear, plain-language rephrasing of this request/question so a reviewer can "
+                            "understand it at a glance -- NOT a verbatim copy-paste from the letter. "
+                            "Preserve the full meaning and every actionable detail, just in accessible "
+                            "wording. The exact original wording still lives in `source.quote` for citation "
+                            "purposes, so this field is free to paraphrase."
+                        ),
+                    },
                     "referenced_items": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -124,8 +133,11 @@ EXTRACT_SCHEMA = {
                             "quote": {
                                 "type": "string",
                                 "description": (
-                                    "A short (<=25 words) verbatim quote from that page marking where the "
-                                    "request begins, for traceability back to the original PDF."
+                                    "A short (<=25 words) EXACT, character-for-character quote copied "
+                                    "straight from that page, marking where the request begins -- this is "
+                                    "the citation used to locate and highlight the request in the original "
+                                    "PDF, so it must match the source text precisely (unlike `text`, which "
+                                    "is intentionally rephrased)."
                                 ),
                             },
                         },
@@ -317,11 +329,26 @@ def _select_template(health_authority: Optional[str]) -> Optional[Dict[str, Any]
 
 def _as_list(value: Any) -> List[Any]:
     """Bedrock tool-use occasionally serializes an array field as a JSON string
-    instead of a native array; normalize either shape to a real list."""
+    instead of a native array; normalize either shape to a real list.
+
+    For large arrays (many requests on one letter), the model sometimes
+    appends stray trailing content after a complete JSON array in that
+    string (observed as a json.JSONDecodeError: "Extra data" at some offset
+    deep in the string) -- recover the first complete JSON value with
+    raw_decode instead of failing the whole upload over trailing junk."""
     if isinstance(value, list):
         return value
     if isinstance(value, str):
-        parsed = json.loads(value)
+        stripped = value.strip()
+        if not stripped:
+            return []
+        try:
+            parsed = json.loads(stripped)
+        except json.JSONDecodeError:
+            try:
+                parsed, _ = json.JSONDecoder().raw_decode(stripped)
+            except json.JSONDecodeError as exc:
+                raise BedrockToolCallError(f"Model returned malformed JSON for a list field: {exc}") from exc
         if isinstance(parsed, list):
             return parsed
     return []

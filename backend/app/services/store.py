@@ -54,6 +54,13 @@ def save_pdf(correspondence_id: str, filename: str, pdf_bytes: bytes) -> str:
     return s3_key
 
 
+def get_pdf_bytes(correspondence: Correspondence) -> bytes:
+    if LOCAL_STORE:
+        path = _LOCAL_PDF_DIR / f"{correspondence.correspondence_id}_{correspondence.filename}"
+        return path.read_bytes()
+    return _get_s3().get_object(Bucket=S3_BUCKET, Key=correspondence.s3_key)["Body"].read()
+
+
 def put_correspondence(correspondence: Correspondence) -> None:
     item = correspondence.model_dump(mode="json")
     if LOCAL_STORE:

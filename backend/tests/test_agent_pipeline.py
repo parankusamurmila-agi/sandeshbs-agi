@@ -1,8 +1,10 @@
 from unittest.mock import patch
 
+import pytest
+
 from app.models import CorrespondenceMeta, HaRequest, SourceLocation
 from app.services import agent_pipeline
-from app.services.bedrock_client import UsageInfo
+from app.services.bedrock_client import BedrockToolCallError, UsageInfo
 
 _USAGE = UsageInfo(model_id="us.anthropic.claude-sonnet-5", input_tokens=100, output_tokens=50)
 
@@ -143,3 +145,35 @@ def test_draft_response_handles_no_linked_evidence(mock_call_tool):
     assert '"linked_registration_records": []' in kwargs["user_text"]
     assert '"linked_submission_content": []' in kwargs["user_text"]
     assert '"linked_historic_precedents": []' in kwargs["user_text"]
+
+
+def test_as_list_passes_through_native_list():
+    assert agent_pipeline._as_list([{"a": 1}]) == [{"a": 1}]
+
+
+def test_as_list_parses_well_formed_json_string():
+    assert agent_pipeline._as_list('[{"a": 1}, {"b": 2}]') == [{"a": 1}, {"b": 2}]
+
+
+def test_as_list_recovers_from_trailing_extra_data():
+    # Reproduces the real failure: Bedrock tool-use serialized `requests` as a
+    # JSON string, and the model appended stray content after a complete,
+    # valid array -- json.loads raises JSONDecodeError("Extra data", ...).
+    # raw_decode should recover the leading, complete array instead of
+    # crashing the whole extraction.
+    malformed = '[{"a": 1}, {"b": 2}]{"stray": "duplicate or junk content"}'
+    assert agent_pipeline._as_list(malformed) == [{"a": 1}, {"b": 2}]
+
+
+def test_as_list_raises_clear_error_for_genuinely_malformed_json():
+    with pytest.raises(BedrockToolCallError):
+        agent_pipeline._as_list('[{"a": 1}, {"unterminated": "str')
+
+
+def test_as_list_returns_empty_for_blank_string():
+    assert agent_pipeline._as_list("") == []
+    assert agent_pipeline._as_list("   ") == []
+
+
+def test_as_list_returns_empty_for_non_list_json():
+    assert agent_pipeline._as_list('{"not": "a list"}') == []
