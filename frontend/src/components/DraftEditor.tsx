@@ -18,6 +18,7 @@ export default function DraftEditor({ request, busy, onGenerate, onSave, onAppro
   }, [request.request_id, request.draft?.text]);
 
   const isDirty = draftText !== (request.draft?.text ?? "");
+  const canGenerate = request.status !== "extracted";
 
   return (
     <div>
@@ -32,15 +33,25 @@ export default function DraftEditor({ request, busy, onGenerate, onSave, onAppro
       <div style={{ marginTop: 8 }}>
         <button
           onClick={() => onGenerate(direction)}
-          disabled={busy || request.status === "approved"}
+          disabled={busy || !canGenerate || request.status === "approved"}
         >
           {request.draft ? "Regenerate draft" : "Generate draft"}
         </button>
+        {!canGenerate && (
+          <p style={{ color: "#a15c00", fontSize: "0.8rem", marginTop: 4 }}>
+            Link a registration record before generating a draft.
+          </p>
+        )}
       </div>
 
       {request.draft && (
         <>
           <div className="section-title">Draft response</div>
+          {request.draft.template_id && (
+            <div style={{ fontSize: "0.8rem", color: "#777", marginBottom: 4 }}>
+              Template: {request.draft.template_id}
+            </div>
+          )}
           <textarea
             rows={10}
             value={draftText}

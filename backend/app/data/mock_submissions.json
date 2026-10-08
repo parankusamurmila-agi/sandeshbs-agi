@@ -61,5 +61,26 @@
     "doc_type": "Summary Document",
     "module": "Module 2.7.3",
     "summary": "High-level efficacy summary cross-referencing the ISE and individual study CSRs."
+  },
+  {
+    "doc_id": "SUB-CA-123456-ASMF-1234-045",
+    "title": "Active Substance Master File (ASMF 1234-045)",
+    "doc_type": "ASMF",
+    "module": "Module 3.2.S (Restricted Part)",
+    "summary": "ASMF for the API submitted by Beta Pharmaceutical Co. Ltd. (China) supporting the Paracetamol Alpha ANDS; reviewed by Health Canada and found not satisfactory to support the submission at this time."
+  },
+  {
+    "doc_id": "SUB-CA-123456-CPID-CE",
+    "title": "Canadian Product Information Document (CPID-CE)",
+    "doc_type": "CPID",
+    "module": "Module 1",
+    "summary": "Annotated and non-annotated Canadian Product Information Document for Paracetamol Alpha; a revised version reflecting responses to all Notice of Non-Compliance comments must be provided with the resubmission."
+  },
+  {
+    "doc_id": "SUB-LV-00-0114-MC-00215-07711",
+    "title": "Appendix MC 00215/07711 (2017)",
+    "doc_type": "Manufacturing Change Appendix",
+    "module": "Module 1 / Module 3.2.P.3",
+    "summary": "Manufacturing change appendix referenced in the Product X variation application, covering excipient quantities, manufacturing site, and the Excipient 4 grade change; cited repeatedly in the SAM deficiency letter for inconsistencies with Module 3.2.P.3.2/3.2.P.4."
   }
 ]

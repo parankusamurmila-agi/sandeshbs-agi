@@ -20,6 +20,7 @@ export default function RequestList({ requests, selectedId, onSelect }: Props) {
             <strong>#{req.request_id}</strong>
             <StatusBadge status={req.status} />
           </div>
+          <div style={{ fontWeight: 600, fontSize: "0.85rem", color: "#1a1a2e", marginTop: 2 }}>{req.drug}</div>
           <div style={{ fontSize: "0.8rem", color: "#555" }}>{req.section}</div>
           <div style={{ fontSize: "0.85rem", marginTop: 4 }}>
             {req.text.slice(0, 90)}

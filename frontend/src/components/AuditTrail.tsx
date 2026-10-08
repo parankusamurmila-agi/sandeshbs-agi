@@ -9,6 +9,7 @@ export default function AuditTrail({ audit }: { audit: AuditEntry[] }) {
       {audit.map((entry, i) => (
         <div key={i} className="audit-item">
           <strong>{entry.action}</strong> by {entry.actor} — {new Date(entry.ts).toLocaleString()}
+          {entry.request_id ? ` · req #${entry.request_id}` : ""}
           {entry.note ? ` (${entry.note})` : ""}
         </div>
       ))}

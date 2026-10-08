@@ -38,6 +38,12 @@ def _get_s3():
     return _s3_client
 
 
+def get_s3_client():
+    """Public accessor for batch_ingest.py to list/read objects from S3
+    without duplicating the lazy-init singleton pattern."""
+    return _get_s3()
+
+
 def save_pdf(correspondence_id: str, filename: str, pdf_bytes: bytes) -> str:
     s3_key = f"correspondence/{correspondence_id}/{filename}"
     if LOCAL_STORE:

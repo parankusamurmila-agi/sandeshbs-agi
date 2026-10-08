@@ -1,11 +1,29 @@
-"""The three-step HA Request & Response agent.
+"""The HA Request & Response agent.
 
-1. extract_requests  - find every distinct HA request/deficiency in the letter.
-2. link_evidence      - pick relevant submission/historic-precedent/registration records for
-                        one request.
-3. draft_response     - draft a grounded response for one request.
+1. extract_letter               - read the raw PDF directly and find every
+                                   distinct HA request/question, tagging each
+                                   with the specific drug/product it concerns.
+2. match_registration_records    - deterministic (zero-LLM) lookup of a
+                                   request's drug against the mock
+                                   registration/application tracking records,
+                                   optionally narrowed by issuing health
+                                   authority.
+   match_submission_content      - deterministic lookup of the submission
+                                   documents/datasets tied to the matched
+                                   registration record(s) (via their own
+                                   `related_submission_doc_ids`).
+   match_historic_precedents     - deterministic lookup of prior HA
+                                   deficiencies/responses for the same
+                                   application number, for precedent.
+3. draft_response               - draft a grounded, CTD/eCTD-style, region-
+                                   aware response for one request, using the
+                                   matched registration record(s), submission
+                                   content, and historic precedent as
+                                   evidence, with a template selected by
+                                   region.
 
-Each step is one forced tool-use Bedrock Converse call, kept deliberately
+Steps 1 and 3 are each one forced tool-use Bedrock Converse call; step 2's
+three matchers are plain Python with no model call. Kept deliberately
 separate and synchronous so the orchestrating FastAPI endpoints can run them
 on demand within API Gateway's request timeout -- no background workers or
 autonomous looping needed for a hackathon-scale demo.
@@ -14,25 +32,24 @@ autonomous looping needed for a hackathon-scale demo.
 from __future__ import annotations
 
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from app.models import CorrespondenceMeta, Draft, ExtractedRequest, HaRequest, LinkedEvidence
-from app.services.bedrock_client import call_tool
+from app.models import (
+    CorrespondenceMeta,
+    Draft,
+    ExtractedRequest,
+    HaRequest,
+    HistoricPrecedent,
+    RegistrationRecord,
+    SubmissionDocument,
+)
+from app.services.bedrock_client import UsageInfo, call_tool
 from app.services.prompts import get_prompt
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-
-
-@lru_cache(maxsize=1)
-def _load_submissions() -> List[Dict[str, Any]]:
-    return json.loads((DATA_DIR / "mock_submissions.json").read_text(encoding="utf-8"))
-
-
-@lru_cache(maxsize=1)
-def _load_historic_responses() -> List[Dict[str, Any]]:
-    return json.loads((DATA_DIR / "mock_historic_responses.json").read_text(encoding="utf-8"))
 
 
 @lru_cache(maxsize=1)
@@ -45,53 +62,14 @@ def _load_registration_records() -> List[Dict[str, Any]]:
     return json.loads((DATA_DIR / "mock_registration_records.json").read_text(encoding="utf-8"))
 
 
-def _evidence_catalog() -> List[Dict[str, str]]:
-    """Submissions + historic precedent + registration records, normalized into one candidate pool."""
-    catalog: List[Dict[str, str]] = []
-    for sub in _load_submissions():
-        catalog.append(
-            {
-                "doc_id": sub["doc_id"],
-                "title": sub["title"],
-                "doc_type": sub["doc_type"],
-                "detail": sub["summary"],
-            }
-        )
-    for hist in _load_historic_responses():
-        catalog.append(
-            {
-                "doc_id": hist["precedent_id"],
-                "title": f"Prior precedent: {hist['prior_deficiency'][:80]}",
-                "doc_type": "Historic Precedent",
-                "detail": (
-                    f"Prior deficiency: {hist['prior_deficiency']} "
-                    f"Prior response: {hist['prior_response_summary']} "
-                    f"Outcome: {hist['outcome']}"
-                ),
-            }
-        )
-    for reg in _load_registration_records():
-        correspondence = reg.get("last_ha_correspondence") or {}
-        catalog.append(
-            {
-                "doc_id": reg["registration_id"],
-                "title": f"Registration: {reg['product']} - {reg['application_number']} ({reg['market']})",
-                "doc_type": "Registration Record",
-                "detail": (
-                    f"Application {reg['application_number']} ({reg['application_type']}) with "
-                    f"{reg['health_authority']} in {reg['market']}. Status: {reg['status']}. "
-                    f"Original submission: {reg['original_submission_date']}. "
-                    f"Last HA correspondence: {correspondence.get('type', 'n/a')} on "
-                    f"{correspondence.get('date', 'n/a')} ({correspondence.get('reference', '')}). "
-                    f"Response due date: {reg.get('response_due_date') or 'n/a'}."
-                ),
-            }
-        )
-    return catalog
+@lru_cache(maxsize=1)
+def _load_submissions() -> List[Dict[str, Any]]:
+    return json.loads((DATA_DIR / "mock_submissions.json").read_text(encoding="utf-8"))
 
 
-def _catalog_by_id() -> Dict[str, Dict[str, str]]:
-    return {entry["doc_id"]: entry for entry in _evidence_catalog()}
+@lru_cache(maxsize=1)
+def _load_historic_responses() -> List[Dict[str, Any]]:
+    return json.loads((DATA_DIR / "mock_historic_responses.json").read_text(encoding="utf-8"))
 
 
 EXTRACT_SCHEMA = {
@@ -99,12 +77,19 @@ EXTRACT_SCHEMA = {
     "properties": {
         "meta": {
             "type": "object",
-            "description": "Letter-level metadata, best-effort from the first page.",
+            "description": "Letter-level metadata, best-effort from the first page/letterhead.",
             "properties": {
                 "applicant": {"type": "string"},
-                "product": {"type": "string"},
+                "product": {
+                    "type": "string",
+                    "description": (
+                        "Primary/lead product name if the letter is single-product; if the letter "
+                        "covers multiple products, name the lead product here and rely on each "
+                        "request's own `drug` field for per-request attribution."
+                    ),
+                },
                 "letter_date": {"type": "string"},
-                "source": {"type": "string", "description": "e.g. 'FDA', 'EMA'."},
+                "source": {"type": "string", "description": "Issuing health authority, e.g. 'FDA', 'EMA', 'Health Canada'."},
             },
         },
         "requests": {
@@ -117,7 +102,16 @@ EXTRACT_SCHEMA = {
                         "description": "e.g. '1', '9a', '9b' - matches the letter's own numbering/lettering.",
                     },
                     "section": {"type": "string"},
-                    "text": {"type": "string", "description": "Full verbatim text of this request/deficiency."},
+                    "drug": {
+                        "type": "string",
+                        "description": (
+                            "The specific drug/product this request concerns, verbatim as named in the "
+                            "letter (brand name and/or active ingredient/INN). Required on every request, "
+                            "even if the letter only discusses one product overall -- repeat that "
+                            "product's name on every request in that case."
+                        ),
+                    },
+                    "text": {"type": "string", "description": "Full verbatim text of this request/question."},
                     "referenced_items": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -126,37 +120,23 @@ EXTRACT_SCHEMA = {
                     "source": {
                         "type": "object",
                         "properties": {
-                            "page": {"type": "integer"},
-                            "paragraph": {"type": "integer"},
+                            "page": {"type": "integer", "description": "1-based page number in the PDF where this request appears."},
+                            "quote": {
+                                "type": "string",
+                                "description": (
+                                    "A short (<=25 words) verbatim quote from that page marking where the "
+                                    "request begins, for traceability back to the original PDF."
+                                ),
+                            },
                         },
-                        "required": ["page", "paragraph"],
+                        "required": ["page", "quote"],
                     },
                 },
-                "required": ["request_id", "section", "text", "source"],
+                "required": ["request_id", "section", "drug", "text", "source"],
             },
-        }
+        },
     },
     "required": ["meta", "requests"],
-}
-
-LINK_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "linked_evidence": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "doc_id": {"type": "string"},
-                    "title": {"type": "string"},
-                    "doc_type": {"type": "string"},
-                    "rationale": {"type": "string", "description": "One sentence: why this record is relevant."},
-                },
-                "required": ["doc_id", "title", "doc_type", "rationale"],
-            },
-        }
-    },
-    "required": ["linked_evidence"],
 }
 
 DRAFT_SCHEMA = {
@@ -166,11 +146,174 @@ DRAFT_SCHEMA = {
         "citations": {
             "type": "array",
             "items": {"type": "string"},
-            "description": "doc_ids of linked evidence actually cited in the text.",
+            "description": "registration_ids and/or related_submission_doc_ids actually cited in the text.",
         },
     },
     "required": ["text"],
 }
+
+_REGION_TERMINOLOGY: Dict[str, Dict[str, str]] = {
+    "FDA": {
+        "authority_name": "U.S. Food and Drug Administration (FDA)",
+        "review_division": "CDER/CBER",
+        "application_label": "NDA/BLA",
+        "deficiency_label": "Complete Response Letter (CRL) deficiency",
+        "resubmission_label": "Class 1/Class 2 resubmission",
+    },
+    "EMA": {
+        "authority_name": "European Medicines Agency (EMA)",
+        "review_division": "CHMP",
+        "application_label": "Marketing Authorisation Application (MAA)",
+        "deficiency_label": "List of Questions / List of Outstanding Issues",
+        "resubmission_label": "response to the List of Questions",
+    },
+    "HEALTH CANADA": {
+        "authority_name": "Health Canada",
+        "review_division": "Therapeutic Products Directorate (TPD)",
+        "application_label": "New Drug Submission (NDS) / Abbreviated New Drug Submission (ANDS)",
+        "deficiency_label": "Notice of Non-Compliance (NON) / Notice of Deficiency (NOD)",
+        "resubmission_label": "NON/NOD response",
+    },
+    "VIETNAM": {
+        "authority_name": "Drug Administration of Vietnam (DAV), Ministry of Health",
+        "review_division": "Drug Registration Department",
+        "application_label": "drug registration dossier / variation dossier",
+        "deficiency_label": "Deficiency Letter (DL) on a variation dossier",
+        "resubmission_label": "response dossier",
+    },
+    "LATVIA": {
+        "authority_name": "State Agency of Medicines (Latvia)",
+        "review_division": "Medicinal Products Registration Department",
+        "application_label": "variation procedure (Type IB/II)",
+        "deficiency_label": "variation deficiency",
+        "resubmission_label": "variation response",
+    },
+    "HUNGARY": {
+        "authority_name": "National Institute of Pharmacy and Nutrition (OGYEI), Hungary, as Concerned Member State (CMS)",
+        "review_division": "CMS Assessment Team",
+        "application_label": "Decentralised Procedure (DCP) application",
+        "deficiency_label": "Day 100 CMS comments / List of Questions",
+        "resubmission_label": "Day 100 response",
+    },
+}
+_DEFAULT_TERMINOLOGY = {
+    "authority_name": "the reviewing health authority",
+    "review_division": "the relevant review division",
+    "application_label": "the marketing application",
+    "deficiency_label": "deficiency",
+    "resubmission_label": "resubmission",
+}
+
+
+def _region_terminology(health_authority: Optional[str]) -> Dict[str, str]:
+    if not health_authority:
+        return _DEFAULT_TERMINOLOGY
+    key = health_authority.strip().upper()
+    for ha_key, terms in _REGION_TERMINOLOGY.items():
+        if ha_key in key or key in ha_key:
+            return terms
+    return _DEFAULT_TERMINOLOGY
+
+
+def _normalize(s: str) -> str:
+    return re.sub(r"[^A-Z0-9]", "", s.upper())
+
+
+def _product_tokens(product: str) -> List[str]:
+    """'LUTATHERA (177Lu-DOTA0-Tyr3-Octreotate)' -> ['LUTATHERA', '177Lu-DOTA0-Tyr3-Octreotate']."""
+    brand = product.split("(", 1)[0].strip()
+    tokens = [brand] if brand else []
+    paren = re.search(r"\((.*)\)", product)
+    if paren:
+        tokens.append(paren.group(1).strip())
+    return tokens
+
+
+def match_registration_records(
+    drug: Optional[str], health_authority: Optional[str] = None
+) -> List[RegistrationRecord]:
+    """Deterministic, zero-LLM match of a request's `drug` against
+    mock_registration_records.json by fuzzy/substring match on `product`,
+    narrowed by `health_authority` (the correspondence's issuing HA) only
+    when more than one registration shares the product name."""
+    if not drug or not drug.strip():
+        return []
+    drug_key = _normalize(drug)
+    if not drug_key:
+        return []
+
+    matches = [
+        rec
+        for rec in _load_registration_records()
+        if any(
+            tok and (drug_key in _normalize(tok) or _normalize(tok) in drug_key)
+            for tok in _product_tokens(rec["product"])
+        )
+    ]
+
+    if health_authority and len(matches) > 1:
+        ha_key = _normalize(health_authority)
+        narrowed = [
+            m
+            for m in matches
+            if ha_key and (ha_key in _normalize(m["health_authority"]) or _normalize(m["health_authority"]) in ha_key)
+        ]
+        if narrowed:
+            matches = narrowed
+
+    return [RegistrationRecord.model_validate(m) for m in matches]
+
+
+def match_submission_content(linked_registration: List[RegistrationRecord]) -> List[SubmissionDocument]:
+    """Deterministic, zero-LLM lookup of the submission documents/datasets tied
+    to the matched registration record(s), via their own `related_submission_doc_ids`
+    -- the registration record is the authoritative source of which submission
+    content is "affected" by that application, so no fuzzy matching is needed."""
+    doc_ids = {doc_id for reg in linked_registration for doc_id in reg.related_submission_doc_ids}
+    if not doc_ids:
+        return []
+    catalog = {sub["doc_id"]: sub for sub in _load_submissions()}
+    return [SubmissionDocument.model_validate(catalog[doc_id]) for doc_id in doc_ids if doc_id in catalog]
+
+
+_APPLICATION_TAG_RE = re.compile(r"NDA-\d+", re.IGNORECASE)
+
+
+def _application_tag(value: str) -> Optional[str]:
+    match = _APPLICATION_TAG_RE.search(value)
+    return match.group(0).upper() if match else None
+
+
+def match_historic_precedents(linked_registration: List[RegistrationRecord]) -> List[HistoricPrecedent]:
+    """Deterministic, zero-LLM lookup of prior HA deficiencies/responses for the
+    same application number as the matched registration record(s), for precedent
+    (mock_historic_responses.json's `precedent_id`s embed the NDA number they
+    resolved, e.g. 'HIST-2015-NDA-198765-D04')."""
+    app_tags = {tag for reg in linked_registration for tag in [_application_tag(reg.application_number)] if tag}
+    if not app_tags:
+        return []
+    matches = [prec for prec in _load_historic_responses() if _application_tag(prec["precedent_id"]) in app_tags]
+    return [HistoricPrecedent.model_validate(prec) for prec in matches]
+
+
+def _select_template(health_authority: Optional[str]) -> Optional[Dict[str, Any]]:
+    """Picks the response template whose `region` matches the given health
+    authority, falling back to the generic template (or the first template, if
+    no generic one is defined)."""
+    templates = _load_templates()
+    if not templates:
+        return None
+    if health_authority:
+        key = health_authority.strip().upper()
+        for template in templates:
+            region = (template.get("region") or "").strip().upper()
+            if region and (region in key or key in region):
+                return template
+    for template in templates:
+        if (template.get("region") or "").strip().upper() == "GENERIC":
+            return template
+    return templates[0]
+
 
 def _as_list(value: Any) -> List[Any]:
     """Bedrock tool-use occasionally serializes an array field as a JSON string
@@ -184,83 +327,87 @@ def _as_list(value: Any) -> List[Any]:
     return []
 
 
-def extract_letter(tagged_letter_text: str) -> tuple[CorrespondenceMeta, List[ExtractedRequest]]:
-    result = call_tool(
+def extract_letter(
+    pdf_bytes: bytes, filename: str
+) -> tuple[CorrespondenceMeta, List[ExtractedRequest], UsageInfo]:
+    result, usage = call_tool(
         system_prompt=get_prompt("ha-extract-requests"),
-        user_text=tagged_letter_text,
+        user_text=(
+            "Extract the letter metadata and every distinct HA request from the attached "
+            "PDF, following the schema and instructions in the system prompt."
+        ),
+        document_bytes=pdf_bytes,
+        document_name=filename,
+        document_format="pdf",
         tool_name="extract_requests",
-        tool_description="Record letter metadata and every distinct HA request/deficiency found.",
+        tool_description=(
+            "Record letter metadata and every distinct HA request/question found, each tagged "
+            "with the drug it concerns."
+        ),
         tool_schema=EXTRACT_SCHEMA,
         max_tokens=8192,
     )
     meta = CorrespondenceMeta.model_validate(result.get("meta") or {})
     requests = [ExtractedRequest.model_validate(item) for item in _as_list(result.get("requests", []))]
-    return meta, requests
-
-
-def link_evidence(request: HaRequest) -> List[LinkedEvidence]:
-    catalog = _evidence_catalog()
-    user_text = json.dumps(
-        {
-            "deficiency": {
-                "request_id": request.request_id,
-                "section": request.section,
-                "text": request.text,
-                "referenced_items": request.referenced_items,
-            },
-            "candidate_pool": catalog,
-        },
-        indent=2,
-    )
-    result = call_tool(
-        system_prompt=get_prompt("ha-link-evidence"),
-        user_text=user_text,
-        tool_name="link_evidence",
-        tool_description="Select relevant evidence records for this deficiency.",
-        tool_schema=LINK_SCHEMA,
-        max_tokens=2048,
-    )
-    return [LinkedEvidence.model_validate(item) for item in _as_list(result.get("linked_evidence", []))]
+    return meta, requests, usage
 
 
 def draft_response(
     request: HaRequest,
-    linked_evidence: List[LinkedEvidence],
+    linked_registration: List[RegistrationRecord],
+    linked_submissions: List[SubmissionDocument],
+    linked_precedents: List[HistoricPrecedent],
+    correspondence_meta: CorrespondenceMeta,
     direction: Optional[str] = None,
-) -> Draft:
-    by_id = _catalog_by_id()
-    evidence_detail = [
+) -> tuple[Draft, UsageInfo]:
+    registration_detail = [
         {
-            "doc_id": ev.doc_id,
-            "title": ev.title,
-            "doc_type": ev.doc_type,
-            "detail": by_id.get(ev.doc_id, {}).get("detail", ""),
-            "rationale": ev.rationale,
+            "registration_id": reg.registration_id,
+            "product": reg.product,
+            "application_number": reg.application_number,
+            "application_type": reg.application_type,
+            "health_authority": reg.health_authority,
+            "market": reg.market,
+            "status": reg.status,
+            "original_submission_date": reg.original_submission_date,
+            "last_ha_correspondence": reg.last_ha_correspondence.model_dump() if reg.last_ha_correspondence else None,
+            "response_due_date": reg.response_due_date,
         }
-        for ev in linked_evidence
+        for reg in linked_registration
     ]
-    templates = _load_templates()
+    submission_detail = [sub.model_dump() for sub in linked_submissions]
+    precedent_detail = [prec.model_dump() for prec in linked_precedents]
+
+    region_ha = linked_registration[0].health_authority if linked_registration else correspondence_meta.source
+    template = _select_template(region_ha)
+
     user_text = json.dumps(
         {
-            "deficiency": {
+            "question": {
                 "request_id": request.request_id,
                 "section": request.section,
+                "drug": request.drug,
                 "text": request.text,
             },
-            "linked_evidence": evidence_detail,
-            "template": templates[0] if templates else None,
+            "linked_registration_records": registration_detail,
+            "linked_submission_content": submission_detail,
+            "linked_historic_precedents": precedent_detail,
+            "region_terminology": _region_terminology(region_ha),
+            "template": template,
             "user_direction": direction,
         },
         indent=2,
     )
-    result = call_tool(
+    result, usage = call_tool(
         system_prompt=get_prompt("ha-draft-response"),
         user_text=user_text,
         tool_name="draft_response",
-        tool_description="Draft the response text for this deficiency.",
+        tool_description="Draft a CTD/eCTD-style, region-appropriate response to this HA question.",
         tool_schema=DRAFT_SCHEMA,
         max_tokens=4096,
     )
     if "citations" in result:
         result["citations"] = _as_list(result["citations"])
-    return Draft.model_validate(result)
+    draft = Draft.model_validate(result)
+    draft.template_id = template["template_id"] if template else None
+    return draft, usage
