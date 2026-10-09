@@ -25,19 +25,26 @@ infra/agentcore/).
 
 from __future__ import annotations
 
+import os
 from dataclasses import asdict
 from typing import Any, Dict
 
-from bedrock_agentcore import BedrockAgentCoreApp
+# This runtime reads its system prompts (ha-link-request / ha-draft-response)
+# from Amazon Bedrock Prompt Management. app.config reads PROMPT_SOURCE at
+# import time, so it must be set before importing app.* below; setdefault keeps
+# an explicit runtime env var authoritative if one is ever configured.
+os.environ.setdefault("PROMPT_SOURCE", "bedrock")
 
-from app.models import (
+from bedrock_agentcore import BedrockAgentCoreApp  # noqa: E402
+
+from app.models import (  # noqa: E402
     CorrespondenceMeta,
     HaRequest,
     HistoricPrecedent,
     RegistrationRecord,
     SubmissionDocument,
 )
-from app.services import agent_pipeline
+from app.services import agent_pipeline  # noqa: E402
 
 app = BedrockAgentCoreApp()
 
