@@ -6,7 +6,7 @@ interface Props {
 }
 
 function formatCost(usd: number): string {
-  return `$${usd.toFixed(4)} (est.)`;
+  return `$${usd.toFixed(4)}`;
 }
 
 export default function InvocationsPanel({ invocations, onSelectRequest }: Props) {
@@ -28,7 +28,7 @@ export default function InvocationsPanel({ invocations, onSelectRequest }: Props
             <th style={{ padding: "6px 8px" }}>Output tokens</th>
             <th style={{ padding: "6px 8px" }}>Cache read</th>
             <th style={{ padding: "6px 8px" }}>Cache write</th>
-            <th style={{ padding: "6px 8px" }}>Est. cost</th>
+            <th style={{ padding: "6px 8px" }}>Cost</th>
             <th style={{ padding: "6px 8px" }}>When</th>
           </tr>
         </thead>
@@ -60,7 +60,7 @@ export default function InvocationsPanel({ invocations, onSelectRequest }: Props
         </tbody>
       </table>
       <p style={{ fontSize: "0.85rem", color: "#555", marginTop: 8 }}>
-        Total estimated cost for this document: <strong>{formatCost(totalCost)}</strong>
+        Total cost for this document: <strong>{formatCost(totalCost)}</strong>
       </p>
     </div>
   );

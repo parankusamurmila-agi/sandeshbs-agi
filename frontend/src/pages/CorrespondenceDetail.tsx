@@ -98,8 +98,7 @@ export default function CorrespondenceDetail() {
       {correspondence.status === "extracting" && (
         <div className="card" style={{ background: "#f5f3ff", border: "1px solid #ddd6fe" }}>
           <p style={{ margin: 0 }}>
-            ⏳ Extracting questions from the letter… large documents can take up to a minute. This page updates
-            automatically.
+            ⏳ Extracting questions from the letter… This page updates automatically.
           </p>
         </div>
       )}
