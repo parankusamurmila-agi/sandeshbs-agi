@@ -33,7 +33,7 @@ class RegistrationCorrespondence(BaseModel):
 
 
 class RegistrationRecord(BaseModel):
-    """Mirrors one entry of data/mock_registration_records.json."""
+    """Mirrors one entry of data/registration_records.json."""
 
     registration_id: str
     product: str
@@ -49,7 +49,7 @@ class RegistrationRecord(BaseModel):
 
 
 class SubmissionDocument(BaseModel):
-    """Mirrors one entry of data/mock_submissions.json."""
+    """Mirrors one entry of data/submissions.json."""
 
     doc_id: str
     title: str
@@ -59,7 +59,7 @@ class SubmissionDocument(BaseModel):
 
 
 class HistoricPrecedent(BaseModel):
-    """Mirrors one entry of data/mock_historic_responses.json."""
+    """Mirrors one entry of data/historic_responses.json."""
 
     precedent_id: str
     prior_deficiency: str

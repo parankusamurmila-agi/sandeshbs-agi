@@ -49,7 +49,7 @@ health authority actually asking the applicant to do, and how do we respond."
 3. **Human review, then link to affected content** — after reviewing a question in the
    UI (`RequestList.tsx` / `EvidencePanel.tsx`), the user explicitly triggers
    `POST .../requests/{id}/link`, which deterministically (no LLM call) matches that
-   question's `drug` against `mock_registration_records.json`, narrowing by the letter's
+   question's `drug` against `registration_records.json`, narrowing by the letter's
    issuing health authority when a product has more than one registration (e.g. a US/FDA
    and an EU/EMA filing for the same drug) (`agent_pipeline.match_registration_records`).
    From there, the submission documents/datasets belonging to that same application
@@ -212,7 +212,7 @@ npx cdk deploy -c bedrock_model_id=<your-model-id>
   1. `extract_letter` — one Bedrock call over the whole PDF, returns letter metadata and
      every question tagged with its own `drug`.
   2. `match_registration_records` — **zero-LLM**, plain-Python fuzzy match of a
-     question's `drug` against `mock_registration_records.json`, narrowed by the
+     question's `drug` against `registration_records.json`, narrowed by the
      letter's issuing health authority when more than one registration shares a product
      name.
      `match_submission_content` — resolves the submission docs/datasets tied to the

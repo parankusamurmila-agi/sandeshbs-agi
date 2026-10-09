@@ -73,17 +73,17 @@ def _load_templates() -> List[Dict[str, Any]]:
 
 @lru_cache(maxsize=1)
 def _load_registration_records() -> List[Dict[str, Any]]:
-    return json.loads((DATA_DIR / "mock_registration_records.json").read_text(encoding="utf-8"))
+    return json.loads((DATA_DIR / "registration_records.json").read_text(encoding="utf-8"))
 
 
 @lru_cache(maxsize=1)
 def _load_submissions() -> List[Dict[str, Any]]:
-    return json.loads((DATA_DIR / "mock_submissions.json").read_text(encoding="utf-8"))
+    return json.loads((DATA_DIR / "submissions.json").read_text(encoding="utf-8"))
 
 
 @lru_cache(maxsize=1)
 def _load_historic_responses() -> List[Dict[str, Any]]:
-    return json.loads((DATA_DIR / "mock_historic_responses.json").read_text(encoding="utf-8"))
+    return json.loads((DATA_DIR / "historic_responses.json").read_text(encoding="utf-8"))
 
 
 EXTRACT_SCHEMA = {
@@ -246,7 +246,7 @@ def match_registration_records(
     drug: Optional[str], health_authority: Optional[str] = None
 ) -> List[RegistrationRecord]:
     """Deterministic, zero-LLM match of a request's `drug` against
-    mock_registration_records.json by fuzzy/substring match on `product`,
+    registration_records.json by fuzzy/substring match on `product`,
     narrowed by `health_authority` (the correspondence's issuing HA) only
     when more than one registration shares the product name."""
     if not drug or not drug.strip():
@@ -300,7 +300,7 @@ def _application_tag(value: str) -> Optional[str]:
 def match_historic_precedents(linked_registration: List[RegistrationRecord]) -> List[HistoricPrecedent]:
     """Deterministic, zero-LLM lookup of prior HA deficiencies/responses for the
     same application number as the matched registration record(s), for precedent
-    (mock_historic_responses.json's `precedent_id`s embed the NDA number they
+    (historic_responses.json's `precedent_id`s embed the NDA number they
     resolved, e.g. 'HIST-2015-NDA-198765-D04')."""
     app_tags = {tag for reg in linked_registration for tag in [_application_tag(reg.application_number)] if tag}
     if not app_tags:
