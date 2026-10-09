@@ -89,8 +89,7 @@ export default function UploadPage() {
         <>
           <p style={{ fontSize: "0.85rem", color: "#555" }}>
             Point at an S3 prefix (<code>s3://bucket/prefix</code>) containing multiple PDF/Word documents, each
-            processed individually. A local folder path only works when the backend runs with{" "}
-            <code>LOCAL_STORE=true</code>.
+            processed individually.
           </p>
           <input
             type="text"
